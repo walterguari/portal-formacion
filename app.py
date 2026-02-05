@@ -19,6 +19,13 @@ st.markdown("""
     section[data-testid="stSidebar"] .stRadio label {
         font-weight: bold;
     }
+    .stMetric {
+        background-color: #f1f8e9;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #c5e1a5;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,15 +66,16 @@ def load_data():
 
 df = load_data()
 
+# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
+if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
+if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
+if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'Todos'
+
 # --- BARRA LATERAL (FILTRO POR ROL) ---
 st.sidebar.title("🏢 Filtro por Rol")
 df_filtrado_cargo = df.copy()
 lista_cargos = []
 cargo_seleccionado = "Todos"
-
-if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
-if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
-if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'Todos'
 
 if not df.empty and 'CARGO' in df.columns:
     lista_cargos = sorted(df['CARGO'].dropna().unique().tolist())
@@ -77,7 +85,7 @@ if not df.empty and 'CARGO' in df.columns:
     # Reseteo al cambiar de rol
     if cargo_seleccionado != st.session_state.ultimo_cargo_sel:
         st.session_state.colaborador_activo = 'Todos'
-        st.session_state.filtro_activo = 'Todos' # También reseteamos el filtro de estado
+        st.session_state.filtro_activo = 'Todos'
         st.session_state.ultimo_cargo_sel = cargo_seleccionado
 
     if cargo_seleccionado != "Todos":
@@ -93,35 +101,27 @@ st.title(f"🎓 Control de Formación - {cargo_seleccionado}")
 
 if not df_filtrado_cargo.empty:
     
-    # =========================================================
-    # 1. SECCIÓN DE COLABORADORES (AHORA ARRIBA)
-    # =========================================================
+    # 1. SECCIÓN DE COLABORADORES
     st.markdown("### 👤 Selecciona un Colaborador:")
     
     if 'COLABORADOR' in df_filtrado_cargo.columns:
         lista_nombres = sorted(df_filtrado_cargo['COLABORADOR'].unique())
         
-        # Botón "Ver Todos"
         tipo_btn_todos_colab = "primary" if st.session_state.colaborador_activo == 'Todos' else "secondary"
         if st.button(f"👥 Ver Todo el Equipo ({len(lista_nombres)} personas)", type=tipo_btn_todos_colab, use_container_width=True):
              st.session_state.colaborador_activo = 'Todos'
-             st.session_state.filtro_activo = 'Todos' # Resetear filtro estado al ver todos
+             st.session_state.filtro_activo = 'Todos'
         
-        # Grid de nombres
         cols_nombres = st.columns(4)
         for i, nombre in enumerate(lista_nombres):
             tipo_btn = "primary" if st.session_state.colaborador_activo == nombre else "secondary"
             if cols_nombres[i % 4].button(nombre, key=f"btn_col_{i}", type=tipo_btn, use_container_width=True):
                 st.session_state.colaborador_activo = nombre
-                st.session_state.filtro_activo = 'Todos' # Resetear filtro estado al cambiar persona
+                st.session_state.filtro_activo = 'Todos'
 
     st.divider()
 
-    # =========================================================
-    # 2. LÓGICA DE FILTRADO (PERSONA -> ESTADO)
-    # =========================================================
-    
-    # Primero filtramos por la persona seleccionada (o todos)
+    # 2. CÁLCULOS DE ESTADO (Persona o Grupo)
     df_persona_view = df_filtrado_cargo.copy()
     nombre_visual = "del Grupo Completo"
     
@@ -129,48 +129,58 @@ if not df_filtrado_cargo.empty:
         df_persona_view = df_persona_view[df_persona_view['COLABORADOR'] == st.session_state.colaborador_activo]
         nombre_visual = f"de {st.session_state.colaborador_activo}"
 
-    # Calculamos KPIs sobre ESTE grupo filtrado (Persona o Grupo)
     total_registros = len(df_persona_view)
     total_pendientes = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 0])
     total_cumplieron = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 1])
     
+    # Cálculo de Porcentaje
+    porcentaje_cumplimiento = (total_cumplieron / total_registros * 100) if total_registros > 0 else 0
+
+    # Lógica de Niveles (Pendientes vs Totales)
     df_n1 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("1", na=False)]
     df_n2 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("2", na=False)]
-    total_n1 = len(df_n1)
-    total_n2 = len(df_n2)
+    
+    # Cuántos faltan por nivel
+    falta_n1 = len(df_n1[df_n1['ESTADO_NUM'] == 0])
+    falta_n2 = len(df_n2[df_n2['ESTADO_NUM'] == 0])
 
-    # =========================================================
-    # 3. SECCIÓN DE ESTADO (AHORA ABAJO)
-    # =========================================================
-    st.markdown(f"### 📊 Estado {nombre_visual}:")
+    # 3. INDICADOR DE PORCENTAJE (NUEVO)
+    c_kpi1, c_kpi2 = st.columns([1, 3])
+    with c_kpi1:
+        st.metric(label="🏆 Cumplimiento Global", value=f"{porcentaje_cumplimiento:.1f}%")
+    with c_kpi2:
+        st.write("Progreso de Formación:")
+        st.progress(int(porcentaje_cumplimiento))
+
+    # 4. BOTONERA DE ESTADO DETALLADA
+    st.markdown(f"### 📊 Detalle {nombre_visual}:")
     
     c1, c2, c3, c4, c5 = st.columns(5)
     
-    # Estilos
     b_all = "primary" if st.session_state.filtro_activo == 'Todos' else "secondary"
     b_fal = "primary" if st.session_state.filtro_activo == 'Faltan' else "secondary"
     b_ok = "primary" if st.session_state.filtro_activo == 'Cumplieron' else "secondary"
     b_n1 = "primary" if st.session_state.filtro_activo == 'Nivel 1' else "secondary"
     b_n2 = "primary" if st.session_state.filtro_activo == 'Nivel 2' else "secondary"
 
-    # Botones con KPIs dinámicos
-    if c1.button(f"📋 Ver Cursos ({total_registros})", type=b_all, use_container_width=True):
+    # Etiquetas Dinámicas
+    txt_n1 = f"🔹 Nivel 1 (Faltan: {falta_n1})"
+    txt_n2 = f"🔸 Nivel 2 (Faltan: {falta_n2})"
+
+    if c1.button(f"📋 Total Cursos ({total_registros})", type=b_all, use_container_width=True):
         st.session_state.filtro_activo = 'Todos'
     if c2.button(f"⏳ Faltan ({total_pendientes})", type=b_fal, use_container_width=True):
         st.session_state.filtro_activo = 'Faltan'
     if c3.button(f"✅ Cumplieron ({total_cumplieron})", type=b_ok, use_container_width=True):
         st.session_state.filtro_activo = 'Cumplieron'
-    if c4.button(f"🔹 Nivel 1 ({total_n1})", type=b_n1, use_container_width=True):
+    if c4.button(txt_n1, type=b_n1, use_container_width=True):
         st.session_state.filtro_activo = 'Nivel 1'
-    if c5.button(f"🔸 Nivel 2 ({total_n2})", type=b_n2, use_container_width=True):
+    if c5.button(txt_n2, type=b_n2, use_container_width=True):
         st.session_state.filtro_activo = 'Nivel 2'
 
-    # =========================================================
-    # 4. TABLA FINAL
-    # =========================================================
+    # 5. TABLA FINAL
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Aplicamos filtro final de estado
     df_final_view = df_persona_view.copy()
     subtitulo = "Todos los cursos asignados"
 
@@ -182,14 +192,22 @@ if not df_filtrado_cargo.empty:
         subtitulo = "Solo cursos realizados"
     elif st.session_state.filtro_activo == 'Nivel 1':
         df_final_view = df_n1
-        subtitulo = "Cursos de Nivel 1"
+        subtitulo = f"Cursos Nivel 1 (Pendientes: {falta_n1})"
     elif st.session_state.filtro_activo == 'Nivel 2':
         df_final_view = df_n2
-        subtitulo = "Cursos de Nivel 2"
+        subtitulo = f"Cursos Nivel 2 (Pendientes: {falta_n2})"
 
     st.caption(f"Mostrando: {subtitulo}")
 
-    cols_mostrar = ['COLABORADOR', 'CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
+    # Columnas a mostrar (QUITAMOS COLABORADOR SI SELECCIONAMOS UNO ESPECÍFICO)
+    # Si estamos viendo "Todos" (grupo), dejamos Colaborador para saber de quién es cada curso.
+    # Si estamos viendo "Juan Perez", quitamos la columna Colaborador porque es redundante.
+    
+    cols_mostrar = ['CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
+    
+    if st.session_state.colaborador_activo == 'Todos':
+        cols_mostrar.insert(0, 'COLABORADOR') # Lo agregamos al principio solo si vemos el grupo
+
     cols_reales = [c for c in cols_mostrar if c in df_final_view.columns]
 
     st.dataframe(
