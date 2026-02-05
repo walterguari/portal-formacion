@@ -2,107 +2,161 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(
-    page_title="Portal Formación", 
-    page_icon="🎓", 
-    layout="wide"
-)
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Portal Formación 2026", layout="wide", initial_sidebar_state="expanded")
 
-# 2. CONEXIÓN CON GOOGLE SHEETS
-# Reemplaza esto si cambias de hoja
+# --- ESTILOS CSS ---
+st.markdown("""
+<style>
+    div.stButton > button {
+        width: 100%;
+        border-radius: 10px;
+        height: 3em;
+        font-weight: bold;
+        border: 1px solid #dce775;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- CARGA DE DATOS ---
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
-GID = "245378054" # ID de la pestaña "Avance de formacion"
+GID = "245378054"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-@st.cache_data(ttl=60) # Actualiza cada 60 segundos
-def cargar_datos():
+@st.cache_data(ttl=60)
+def load_data():
     try:
         df = pd.read_csv(URL)
-        # Limpiamos los nombres de las columnas (quitamos espacios y mayúsculas excesivas)
-        df.columns = df.columns.str.strip().str.title()
+        df.columns = df.columns.str.strip().str.title() # Normalizar nombres
+        
+        # RENOMBRAR COLUMNAS PARA FACILITAR EL USO
+        # Ajusta estos nombres si en tu Excel cambian ligeramente
+        col_map = {
+            'Nombre Del Colaborador': 'COLABORADOR',
+            'Cargo': 'CARGO',
+            'Formacion': 'CURSO',
+            'Tipo De Curso': 'TIPO',
+            'Niveles': 'NIVEL',
+            'Capacitaciones': 'ESTADO_NUM' # 1 = SI, 0 = NO
+        }
+        # Renombramos solo las columnas que existan
+        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+        
+        # Asegurarnos que ESTADO_NUM sea numérico (rellenar vacíos con 0)
+        if 'ESTADO_NUM' in df.columns:
+            df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
+        
+        # Limpieza de Nivel (para asegurar que "Nivel 1" y "nivel 1" sean lo mismo)
+        if 'NIVEL' in df.columns:
+            df['NIVEL'] = df['NIVEL'].astype(str).str.strip().str.title()
+
         return df
     except Exception as e:
-        st.error(f"⚠️ Error al conectar con Google Sheets: {e}")
+        st.error(f"Error cargando datos: {e}")
         return pd.DataFrame()
 
-# Cargar los datos
-df = cargar_datos()
+df = load_data()
 
-# 3. INTERFAZ PRINCIPAL
-st.title("🎓 Tablero de Control: Avance de Formación")
+# --- GESTIÓN DEL ESTADO (MEMORIA DE FILTROS) ---
+if 'filtro_activo' not in st.session_state:
+    st.session_state.filtro_activo = 'Todos'
 
-if df.empty:
-    st.warning("No se pudieron cargar datos. Revisa que la hoja de Google Sheets sea pública (Lectura).")
-else:
-    # --- BARRA LATERAL (FILTROS) ---
-    st.sidebar.header("🔍 Filtros")
-    
-    # Intentamos detectar columnas clave automáticamente
-    cols = df.columns.tolist()
-    
-    # Filtro 1: Posiblemente "Colaborador" o "Nombre"
-    col_persona = next((c for c in cols if "NOMBRE" in c.upper() or "COLABORADOR" in c.upper()), cols[0])
-    filtro_persona = st.sidebar.multiselect("Filtrar por Persona", df[col_persona].unique())
-    
-    # Filtro 2: Posiblemente "Cargo" o "Puesto"
-    col_cargo = next((c for c in cols if "CARGO" in c.upper() or "PUESTO" in c.upper()), None)
-    if col_cargo:
-        filtro_cargo = st.sidebar.multiselect("Filtrar por Cargo", df[col_cargo].unique())
-    
-    # Filtro 3: Estado o Avance
-    col_estado = next((c for c in cols if "ESTADO" in c.upper() or "AVANCE" in c.upper() or "STATUS" in c.upper()), None)
-    if col_estado:
-        filtro_estado = st.sidebar.multiselect("Filtrar por Estado", df[col_estado].unique())
+# --- TÍTULO ---
+st.title("🎓 Control de Formación 2026")
 
-    # --- APLICAR FILTROS ---
-    df_filtrado = df.copy()
-    if filtro_persona:
-        df_filtrado = df_filtrado[df_filtrado[col_persona].isin(filtro_persona)]
-    if col_cargo and filtro_cargo:
-        df_filtrado = df_filtrado[df_filtrado[col_cargo].isin(filtro_cargo)]
-    if col_estado and filtro_estado:
-        df_filtrado = df_filtrado[df_filtrado[col_estado].isin(filtro_estado)]
+if not df.empty:
+    
+    # --- CÁLCULO DE INDICADORES (KPIs) ---
+    # 1. Estado (0 o 1)
+    total_pendientes = len(df[df['ESTADO_NUM'] == 0])
+    total_cumplieron = len(df[df['ESTADO_NUM'] == 1])
+    
+    # 2. Niveles (Buscamos texto que contenga "1" o "2")
+    # Ajustamos la lógica para ser flexibles si dice "Nivel 1" o solo "1"
+    df_n1 = df[df['NIVEL'].astype(str).str.contains("1", na=False)]
+    df_n2 = df[df['NIVEL'].astype(str).str.contains("2", na=False)]
+    
+    total_n1 = len(df_n1)
+    total_n2 = len(df_n2)
 
-    # --- KPI (INDICADORES) ---
-    total_registros = len(df_filtrado)
-    st.markdown("### 📊 Resumen General")
+    # --- BOTONES DE FILTRO SUPERIOR ---
+    st.markdown("### 🔘 Selecciona un grupo para filtrar:")
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Registros", total_registros)
+    c1, c2, c3, c4, c5 = st.columns(5)
     
-    # Si tenemos columna de estado, mostramos métrica de completados
-    if col_estado:
-        # Buscamos palabras clave de éxito como "OK", "Realizado", "Completo", "100%"
-        completados = df_filtrado[df_filtrado[col_estado].astype(str).str.contains("Realizado|OK|Completo|100", case=False, na=False)]
-        qty_ok = len(completados)
-        porcentaje = (qty_ok / total_registros * 100) if total_registros > 0 else 0
-        c2.metric("✅ Completados", f"{qty_ok}")
-        c3.metric("📈 % Avance", f"{porcentaje:.1f}%")
-        st.progress(int(porcentaje))
+    # Definimos el color del botón (Primary = Activo, Secondary = Inactivo)
+    btn_todos = "primary" if st.session_state.filtro_activo == 'Todos' else "secondary"
+    btn_faltan = "primary" if st.session_state.filtro_activo == 'Faltan' else "secondary"
+    btn_ok = "primary" if st.session_state.filtro_activo == 'Cumplieron' else "secondary"
+    btn_n1 = "primary" if st.session_state.filtro_activo == 'Nivel 1' else "secondary"
+    btn_n2 = "primary" if st.session_state.filtro_activo == 'Nivel 2' else "secondary"
+
+    # Botón 1: TODOS
+    if c1.button(f"📋 Ver Todos ({len(df)})", type=btn_todos, use_container_width=True):
+        st.session_state.filtro_activo = 'Todos'
+        
+    # Botón 2: FALTAN (0) - Rojo/Alerta visual en el texto
+    if c2.button(f"⏳ Faltan ({total_pendientes})", type=btn_faltan, use_container_width=True):
+        st.session_state.filtro_activo = 'Faltan'
+
+    # Botón 3: CUMPLIERON (1)
+    if c3.button(f"✅ Cumplieron ({total_cumplieron})", type=btn_ok, use_container_width=True):
+        st.session_state.filtro_activo = 'Cumplieron'
+
+    # Botón 4: NIVEL 1
+    if c4.button(f"🔹 Nivel 1 ({total_n1})", type=btn_n1, use_container_width=True):
+        st.session_state.filtro_activo = 'Nivel 1'
+
+    # Botón 5: NIVEL 2
+    if c5.button(f"🔸 Nivel 2 ({total_n2})", type=btn_n2, use_container_width=True):
+        st.session_state.filtro_activo = 'Nivel 2'
 
     st.divider()
 
-    # --- TABLA DE DATOS ---
-    st.subheader("📋 Detalle de Cursos")
-    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
+    # --- APLICACIÓN DEL FILTRO ---
+    df_view = df.copy()
+    titulo_tabla = "Listado General"
 
-    # --- GRÁFICOS SIMPLES ---
-    if col_estado:
-        st.subheader("📊 Gráficos")
-        col_g1, col_g2 = st.columns(2)
+    if st.session_state.filtro_activo == 'Faltan':
+        df_view = df_view[df_view['ESTADO_NUM'] == 0]
+        titulo_tabla = "⚠️ Personas que NO han realizado la capacitación"
+        st.warning(f"Mostrando {len(df_view)} colaboradores pendientes.")
         
-        with col_g1:
-            # Gráfico de Torta por Estado
-            conteo_estados = df_filtrado[col_estado].value_counts().reset_index()
-            conteo_estados.columns = ['Estado', 'Cantidad']
-            fig_pie = px.pie(conteo_estados, values='Cantidad', names='Estado', title="Distribución por Estado", hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with col_g2:
-            # Gráfico de Barras por Cargo (si existe)
-            if col_cargo:
-                conteo_cargo = df_filtrado.groupby(col_cargo)[col_estado].count().reset_index()
-                conteo_cargo.columns = ['Cargo', 'Cantidad']
-                fig_bar = px.bar(conteo_cargo, x='Cargo', y='Cantidad', title="Cursos por Cargo")
-                st.plotly_chart(fig_bar, use_container_width=True)
+    elif st.session_state.filtro_activo == 'Cumplieron':
+        df_view = df_view[df_view['ESTADO_NUM'] == 1]
+        titulo_tabla = "✅ Personas que YA completaron la capacitación"
+        st.success(f"Mostrando {len(df_view)} colaboradores capacitados.")
+        
+    elif st.session_state.filtro_activo == 'Nivel 1':
+        df_view = df_n1
+        titulo_tabla = "🔹 Listado Nivel 1"
+        
+    elif st.session_state.filtro_activo == 'Nivel 2':
+        df_view = df_n2
+        titulo_tabla = "🔸 Listado Nivel 2"
+
+    # --- TABLA DE RESULTADOS ---
+    st.subheader(titulo_tabla)
+    
+    # Columnas a mostrar (limpias)
+    cols_mostrar = ['COLABORADOR', 'CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
+    # Filtramos solo las que existen realmente en el dataframe
+    cols_reales = [c for c in cols_mostrar if c in df_view.columns]
+
+    st.dataframe(
+        df_view[cols_reales],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "ESTADO_NUM": st.column_config.CheckboxColumn(
+                "Realizado?",
+                help="1 = Sí, 0 = No",
+                disabled=True # Solo lectura
+            ),
+            "COLABORADOR": st.column_config.TextColumn("Colaborador", width="medium"),
+            "CURSO": st.column_config.TextColumn("Capacitación", width="large"),
+        }
+    )
+
+else:
+    st.warning("No se encontraron datos. Verifica la conexión con la hoja de cálculo.")
