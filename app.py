@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
-import os # --- NUEVO: Importamos 'os' para verificar si existe la imagen
+import os
+import plotly.graph_objects as go # --- NUEVO: Para el gráfico de velocímetro
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Portal Formación 2026", 
     layout="wide", 
     initial_sidebar_state="expanded",
-    page_icon="🎓" # --- NUEVO: Icono en la pestaña del navegador
+    page_icon="🎓"
 )
 
 # --- ESTILOS CSS ---
@@ -25,18 +26,14 @@ st.markdown("""
     section[data-testid="stSidebar"] .stRadio label {
         font-weight: bold;
     }
-    .stMetric {
-        background-color: #f1f8e9;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #c5e1a5;
-        text-align: center;
-    }
-    /* Ajuste para que el logo se vea centrado y limpio */
+    /* Centrar el logo */
     [data-testid="stSidebar"] > div:first-child img {
         margin-bottom: 20px;
-        max-height: 150px; /* Altura máxima para que no ocupe toda la barra */
+        max-height: 150px;
         object-fit: contain;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -78,22 +75,17 @@ def load_data():
 
 df = load_data()
 
-# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
+# --- VARIABLES DE ESTADO ---
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
 if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'Todos'
 
-# =========================================================
-# --- BARRA LATERAL (LOGO + FILTRO) ---
-# =========================================================
-
-# --- NUEVO: LÓGICA PARA MOSTRAR EL LOGO ---
-# Busca un archivo llamado 'logo.png' o 'logo.jpg' en la carpeta
+# --- BARRA LATERAL ---
+# Logo
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 elif os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
-# ------------------------------------------
 
 st.sidebar.title("🏢 Filtro por Rol")
 df_filtrado_cargo = df.copy()
@@ -105,7 +97,6 @@ if not df.empty and 'CARGO' in df.columns:
     opciones_menu = ["Todos"] + lista_cargos
     cargo_seleccionado = st.sidebar.radio("Selecciona un Rol:", opciones_menu)
     
-    # Reseteo al cambiar de rol
     if cargo_seleccionado != st.session_state.ultimo_cargo_sel:
         st.session_state.colaborador_activo = 'Todos'
         st.session_state.filtro_activo = 'Todos'
@@ -119,17 +110,15 @@ if not df.empty and 'CARGO' in df.columns:
 
 st.sidebar.markdown("---")
 
-# --- TÍTULO PRINCIPAL ---
+# --- TÍTULO ---
 st.title(f"🎓 Control de Formación - {cargo_seleccionado}")
 
 if not df_filtrado_cargo.empty:
     
-    # 1. SECCIÓN DE COLABORADORES
+    # 1. SECCIÓN COLABORADORES
     st.markdown("### 👤 Selecciona un Colaborador:")
-    
     if 'COLABORADOR' in df_filtrado_cargo.columns:
         lista_nombres = sorted(df_filtrado_cargo['COLABORADOR'].unique())
-        
         tipo_btn_todos_colab = "primary" if st.session_state.colaborador_activo == 'Todos' else "secondary"
         if st.button(f"👥 Ver Todo el Equipo ({len(lista_nombres)} personas)", type=tipo_btn_todos_colab, use_container_width=True):
              st.session_state.colaborador_activo = 'Todos'
@@ -144,7 +133,7 @@ if not df_filtrado_cargo.empty:
 
     st.divider()
 
-    # 2. CÁLCULOS DE ESTADO (Persona o Grupo)
+    # 2. CÁLCULOS
     df_persona_view = df_filtrado_cargo.copy()
     nombre_visual = "del Grupo Completo"
     
@@ -156,27 +145,70 @@ if not df_filtrado_cargo.empty:
     total_pendientes = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 0])
     total_cumplieron = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 1])
     
-    # Cálculo de Porcentaje
-    porcentaje_cumplimiento = (total_cumplieron / total_registros * 100) if total_registros > 0 else 0
+    porcentaje = (total_cumplieron / total_registros * 100) if total_registros > 0 else 0
 
-    # Lógica de Niveles (Pendientes vs Totales)
     df_n1 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("1", na=False)]
     df_n2 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("2", na=False)]
-    
-    # Cuántos faltan por nivel
     falta_n1 = len(df_n1[df_n1['ESTADO_NUM'] == 0])
     falta_n2 = len(df_n2[df_n2['ESTADO_NUM'] == 0])
 
-    # 3. INDICADOR DE PORCENTAJE
-    c_kpi1, c_kpi2 = st.columns([1, 3])
-    with c_kpi1:
-        st.metric(label="🏆 Cumplimiento Global", value=f"{porcentaje_cumplimiento:.1f}%")
-    with c_kpi2:
-        st.write("Progreso de Formación:")
-        st.progress(int(porcentaje_cumplimiento))
+    # =========================================================
+    # 3. NUEVO INDICADOR DE CUMPLIMIENTO (VELOCÍMETRO)
+    # =========================================================
+    
+    # Definir color y mensaje según el porcentaje
+    if porcentaje < 50:
+        color_gauge = "red"
+        mensaje_motivacional = "⚠️ Atención: Nivel Crítico"
+    elif porcentaje < 80:
+        color_gauge = "orange"
+        mensaje_motivacional = "🔨 En Proceso: A seguir mejorando"
+    else:
+        color_gauge = "green"
+        mensaje_motivacional = "🏆 ¡Excelente! Objetivo cercano"
 
-    # 4. BOTONERA DE ESTADO DETALLADA
-    st.markdown(f"### 📊 Detalle {nombre_visual}:")
+    col_grafico, col_texto = st.columns([1, 2])
+    
+    with col_grafico:
+        # Gráfico Plotly Gauge
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = porcentaje,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Cumplimiento Global"},
+            gauge = {
+                'axis': {'range': [None, 100]},
+                'bar': {'color': color_gauge},
+                'steps': [
+                    {'range': [0, 50], 'color': "#ffebee"}, # Rojo muy claro
+                    {'range': [50, 80], 'color': "#fff3e0"}, # Naranja muy claro
+                    {'range': [80, 100], 'color': "#e8f5e9"} # Verde muy claro
+                ],
+                'threshold': {
+                    'line': {'color': "black", 'width': 4},
+                    'thickness': 0.75,
+                    'value': porcentaje
+                }
+            }
+        ))
+        # Ajustamos el tamaño del gráfico
+        fig.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_texto:
+        # Mensaje grande al lado del gráfico
+        st.markdown(f"### {mensaje_motivacional}")
+        st.markdown(f"Actualmente se han completado **{total_cumplieron}** de **{total_registros}** cursos asignados.")
+        if total_pendientes > 0:
+            st.warning(f"🚨 Faltan **{total_pendientes}** cursos por realizar.")
+        else:
+            st.balloons()
+            st.success("✅ ¡Formación Completada al 100%!")
+
+    # =========================================================
+
+    # 4. BOTONERA DE ESTADO
+    st.markdown(f"### 📊 Filtros Rápidos {nombre_visual}:")
     
     c1, c2, c3, c4, c5 = st.columns(5)
     
@@ -186,7 +218,6 @@ if not df_filtrado_cargo.empty:
     b_n1 = "primary" if st.session_state.filtro_activo == 'Nivel 1' else "secondary"
     b_n2 = "primary" if st.session_state.filtro_activo == 'Nivel 2' else "secondary"
 
-    # Etiquetas Dinámicas
     txt_n1 = f"🔹 Nivel 1 (Faltan: {falta_n1})"
     txt_n2 = f"🔸 Nivel 2 (Faltan: {falta_n2})"
 
@@ -222,7 +253,6 @@ if not df_filtrado_cargo.empty:
 
     st.caption(f"Mostrando: {subtitulo}")
 
-    # Columnas a mostrar
     cols_mostrar = ['CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
     if st.session_state.colaborador_activo == 'Todos':
         cols_mostrar.insert(0, 'COLABORADOR')
