@@ -1,8 +1,14 @@
 import streamlit as st
 import pandas as pd
+import os # --- NUEVO: Importamos 'os' para verificar si existe la imagen
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Portal Formación 2026", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Portal Formación 2026", 
+    layout="wide", 
+    initial_sidebar_state="expanded",
+    page_icon="🎓" # --- NUEVO: Icono en la pestaña del navegador
+)
 
 # --- ESTILOS CSS ---
 st.markdown("""
@@ -25,6 +31,12 @@ st.markdown("""
         border-radius: 8px;
         border: 1px solid #c5e1a5;
         text-align: center;
+    }
+    /* Ajuste para que el logo se vea centrado y limpio */
+    [data-testid="stSidebar"] > div:first-child img {
+        margin-bottom: 20px;
+        max-height: 150px; /* Altura máxima para que no ocupe toda la barra */
+        object-fit: contain;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -71,7 +83,18 @@ if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
 if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'Todos'
 
-# --- BARRA LATERAL (FILTRO POR ROL) ---
+# =========================================================
+# --- BARRA LATERAL (LOGO + FILTRO) ---
+# =========================================================
+
+# --- NUEVO: LÓGICA PARA MOSTRAR EL LOGO ---
+# Busca un archivo llamado 'logo.png' o 'logo.jpg' en la carpeta
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+# ------------------------------------------
+
 st.sidebar.title("🏢 Filtro por Rol")
 df_filtrado_cargo = df.copy()
 lista_cargos = []
@@ -96,7 +119,7 @@ if not df.empty and 'CARGO' in df.columns:
 
 st.sidebar.markdown("---")
 
-# --- TÍTULO ---
+# --- TÍTULO PRINCIPAL ---
 st.title(f"🎓 Control de Formación - {cargo_seleccionado}")
 
 if not df_filtrado_cargo.empty:
@@ -144,7 +167,7 @@ if not df_filtrado_cargo.empty:
     falta_n1 = len(df_n1[df_n1['ESTADO_NUM'] == 0])
     falta_n2 = len(df_n2[df_n2['ESTADO_NUM'] == 0])
 
-    # 3. INDICADOR DE PORCENTAJE (NUEVO)
+    # 3. INDICADOR DE PORCENTAJE
     c_kpi1, c_kpi2 = st.columns([1, 3])
     with c_kpi1:
         st.metric(label="🏆 Cumplimiento Global", value=f"{porcentaje_cumplimiento:.1f}%")
@@ -199,14 +222,10 @@ if not df_filtrado_cargo.empty:
 
     st.caption(f"Mostrando: {subtitulo}")
 
-    # Columnas a mostrar (QUITAMOS COLABORADOR SI SELECCIONAMOS UNO ESPECÍFICO)
-    # Si estamos viendo "Todos" (grupo), dejamos Colaborador para saber de quién es cada curso.
-    # Si estamos viendo "Juan Perez", quitamos la columna Colaborador porque es redundante.
-    
+    # Columnas a mostrar
     cols_mostrar = ['CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
-    
     if st.session_state.colaborador_activo == 'Todos':
-        cols_mostrar.insert(0, 'COLABORADOR') # Lo agregamos al principio solo si vemos el grupo
+        cols_mostrar.insert(0, 'COLABORADOR')
 
     cols_reales = [c for c in cols_mostrar if c in df_final_view.columns]
 
