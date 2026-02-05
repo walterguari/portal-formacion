@@ -75,32 +75,30 @@ SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
 GID = "245378054"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-# Usamos ttl=0 para forzar la recarga y detectar la columna nueva
+# IMPORTANTE: ttl=0 obliga a descargar los datos SIEMPRE, sin guardar caché viejo
 @st.cache_data(ttl=0) 
 def load_data():
     try:
         df = pd.read_csv(URL)
         
-        # Limpieza básica de nombres de columnas
-        df.columns = df.columns.str.strip().str.title()
+        # 1. LIMPIEZA AGRESIVA DE COLUMNAS
+        # Quitamos espacios al principio y final, y pasamos a mayúsculas
+        df.columns = df.columns.str.strip().str.upper()
         
-        # --- MAPEO DE COLUMNAS (Incluyendo Sector) ---
-        # Buscamos variaciones comunes por si hay espacios extra
-        df.rename(columns=lambda x: x.strip(), inplace=True)
+        # 2. RENOMBRADO INTELIGENTE
+        # Buscamos variaciones comunes
+        rename_dict = {}
+        for col in df.columns:
+            if "SECTOR" in col or "AREA" in col: rename_dict[col] = 'SECTOR'
+            elif "ROL" in col: rename_dict[col] = 'CARGO'
+            elif "NOMBRE" in col or "COLABORADOR" in col: rename_dict[col] = 'COLABORADOR'
+            elif "FORMACION" in col: rename_dict[col] = 'CURSO'
+            elif "NIVEL" in col: rename_dict[col] = 'NIVEL'
+            elif "CAPACITA" in col: rename_dict[col] = 'ESTADO_NUM'
+            
+        df = df.rename(columns=rename_dict)
         
-        col_map = {
-            'Sector': 'SECTOR', # Columna A
-            'Rol En El Concesionario': 'CARGO', # Columna B
-            'Nombre Del Colaborador': 'COLABORADOR',
-            'Formacion': 'CURSO',
-            'Tipo De Curso': 'TIPO',
-            'Niveles': 'NIVEL',
-            'Capacitaciones': 'ESTADO_NUM'
-        }
-        # Renombramos solo las que existen
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-        
-        # Conversiones de tipos
+        # 3. LIMPIEZA DE DATOS
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
         
@@ -115,7 +113,7 @@ def load_data():
 
 df = load_data()
 
-# --- GESTIÓN DE ESTADO ---
+# --- VARIABLES DE ESTADO ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
@@ -128,63 +126,65 @@ if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'To
 # 1. LOGO
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
-elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
 
-# 2. INDICADORES DE SECTOR (LO QUE PEDISTE)
+# --- DEBUGGING (DIAGNÓSTICO) ---
+# Si no encuentra SECTOR, muestra qué columnas SÍ encontró para ayudarte
+if not df.empty and 'SECTOR' not in df.columns:
+    st.sidebar.error("⚠️ NO VEO LA COLUMNA 'SECTOR'")
+    st.sidebar.info(f"Columnas encontradas: {list(df.columns)}")
+    st.sidebar.warning("Intenta presionar 'C' y luego 'Clear Cache' en tu teclado.")
+
+# 2. BOTONES DE SECTORES (MINI DASHBOARD)
 if not df.empty and 'SECTOR' in df.columns:
     st.sidebar.markdown("### 📊 Selecciona Sector")
     
-    # Botón para resetear (Ver Todos)
-    btn_todos_style = "primary" if st.session_state.sector_activo == "Todos" else "secondary"
-    if st.sidebar.button("🏢 EMPRESA COMPLETA", type=btn_todos_style, use_container_width=True):
+    # Botón Ver Todos
+    if st.sidebar.button("🏢 EMPRESA COMPLETA", type="primary" if st.session_state.sector_activo == "Todos" else "secondary", use_container_width=True):
         st.session_state.sector_activo = "Todos"
         st.session_state.ultimo_cargo_sel = "Todos"
         st.session_state.colaborador_activo = "Todos"
         st.rerun()
 
-    # Obtenemos lista de sectores
-    sectores = sorted(df['SECTOR'].dropna().unique())
+    sectores_unicos = sorted(df['SECTOR'].dropna().unique())
     
-    # Creamos grid de 2 columnas para los botones de sector
-    cols_sec = st.sidebar.columns(2)
-    
-    for i, sector in enumerate(sectores):
-        # Calculamos % de ese sector
-        df_s = df[df['SECTOR'] == sector]
-        total_s = len(df_s)
-        ok_s = len(df_s[df_s['ESTADO_NUM'] == 1])
-        porc_s = (ok_s / total_s * 100) if total_s > 0 else 0
+    # Grid de botones
+    for i, sector in enumerate(sectores_unicos):
+        df_sec = df[df['SECTOR'] == sector]
+        total = len(df_sec)
+        ok = len(df_sec[df_sec['ESTADO_NUM'] == 1])
+        porc = (ok / total * 100) if total > 0 else 0
         
-        # Color del gráfico
-        color_s = "#ef5350" if porc_s < 50 else "#ffa726" if porc_s < 80 else "#66bb6a"
+        # Color semáforo
+        color = "#ef5350" if porc < 50 else "#ffa726" if porc < 80 else "#66bb6a"
         
-        with cols_sec[i % 2]: # Alternar columnas
-            # 1. Mini Gráfico Circular
-            fig = go.Figure(go.Pie(
-                values=[porc_s, 100-porc_s],
-                hole=0.6,
-                textinfo='none',
-                marker=dict(colors=[color_s, '#e0e0e0']),
-                hoverinfo='skip'
+        # Usamos columnas para poner el indicador al lado del nombre o arriba
+        # Diseño compacto: Botón con el nombre y porcentaje
+        label_btn = f"{sector}\n({porc:.0f}%)"
+        
+        # Estilo visual del botón
+        btn_type = "primary" if st.session_state.sector_activo == sector else "secondary"
+        
+        # Creamos una fila con dos columnas: 1 pequeña para el gráfico, 1 grande para el botón
+        c_graf, c_btn = st.sidebar.columns([1, 3])
+        
+        with c_graf:
+            fig_mini = go.Figure(go.Pie(
+                values=[porc, 100-porc], hole=0.7, textinfo='none',
+                marker=dict(colors=[color, '#eeeeee']), hoverinfo='skip'
             ))
-            fig.update_layout(showlegend=False, margin=dict(l=0,r=0,t=0,b=0), height=50, width=50)
-            st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
+            fig_mini.update_layout(showlegend=False, margin=dict(l=0,r=0,t=0,b=0), height=35, width=35)
+            st.plotly_chart(fig_mini, use_container_width=True, config={'staticPlot': True})
             
-            # 2. Botón del Sector
-            btn_style = "primary" if st.session_state.sector_activo == sector else "secondary"
-            # Nombre corto si es muy largo
-            nombre_btn = f"{sector}\n({porc_s:.0f}%)"
-            
-            if st.button(nombre_btn, key=f"btn_sec_{i}", type=btn_style, use_container_width=True):
+        with c_btn:
+            if st.button(f"{sector}", key=f"btn_sec_{i}", type=btn_type, use_container_width=True):
                 st.session_state.sector_activo = sector
-                st.session_state.ultimo_cargo_sel = "Todos" # Resetear rol al cambiar sector
+                st.session_state.ultimo_cargo_sel = "Todos"
                 st.session_state.colaborador_activo = "Todos"
                 st.rerun()
-                
+
     st.sidebar.markdown("---")
 
-    # 3. FILTRO DE ROL (Filtrado por el Sector elegido)
+    # 3. FILTRO DE ROL
     st.sidebar.subheader(f"Roles en: {st.session_state.sector_activo}")
     
     if st.session_state.sector_activo != "Todos":
@@ -195,52 +195,42 @@ if not df.empty and 'SECTOR' in df.columns:
     lista_cargos = sorted(df_filtrado_sector['CARGO'].dropna().unique().tolist())
     opciones_rol = ["Todos"] + lista_cargos
     
-    # Mantener selección si existe en la nueva lista
-    idx_rol = 0
+    idx = 0
     if st.session_state.ultimo_cargo_sel in opciones_rol:
-        idx_rol = opciones_rol.index(st.session_state.ultimo_cargo_sel)
+        idx = opciones_rol.index(st.session_state.ultimo_cargo_sel)
+        
+    cargo_sel = st.sidebar.radio("Puesto:", opciones_rol, index=idx)
     
-    cargo_sel = st.sidebar.radio("Puesto:", opciones_rol, index=idx_rol)
-    
-    # Actualizar estado si cambia
     if cargo_sel != st.session_state.ultimo_cargo_sel:
         st.session_state.ultimo_cargo_sel = cargo_sel
         st.session_state.colaborador_activo = "Todos"
-        st.session_state.filtro_activo = "Todos"
         st.rerun()
 
-    # Filtrar DF principal
     if cargo_sel != "Todos":
         df_main = df_filtrado_sector[df_filtrado_sector['CARGO'] == cargo_sel]
     else:
         df_main = df_filtrado_sector
 
-    # Botón Salir
     st.sidebar.markdown("---")
     if st.sidebar.button("🔒 Salir"):
         st.session_state.acceso_concedido = False
         st.rerun()
 
 else:
-    # Fallback si no hay columna Sector
-    if not df.empty: st.sidebar.error("⚠️ No se detectó la columna 'Sector'. Revisa el Excel.")
     df_main = df.copy()
 
 # =========================================================
 # --- CUERPO PRINCIPAL ---
 # =========================================================
 
-# Título Dinámico
-txt_sector = st.session_state.sector_activo
-txt_cargo = st.session_state.ultimo_cargo_sel
-titulo = f"Formación: {txt_sector}"
-if txt_cargo != "Todos": titulo += f" > {txt_cargo}"
+titulo = f"{st.session_state.sector_activo}"
+if st.session_state.ultimo_cargo_sel != "Todos": titulo += f" > {st.session_state.ultimo_cargo_sel}"
 
-st.title(f"🎓 {titulo}")
+st.title(f"🎓 Formación: {titulo}")
 
 if not df_main.empty:
     
-    # 1. SELECCIÓN DE COLABORADOR
+    # COLABORADORES
     st.markdown("### 👤 Selecciona Colaborador:")
     if 'COLABORADOR' in df_main.columns:
         lista_nombres = sorted(df_main['COLABORADOR'].unique())
@@ -260,13 +250,10 @@ if not df_main.empty:
     
     st.divider()
 
-    # 2. CÁLCULOS Y GRÁFICOS
+    # CÁLCULOS
     df_view = df_main.copy()
-    nombre_visual = "del Grupo"
-    
     if st.session_state.colaborador_activo != 'Todos':
         df_view = df_view[df_view['COLABORADOR'] == st.session_state.colaborador_activo]
-        nombre_visual = f"de {st.session_state.colaborador_activo}"
 
     total_reg = len(df_view)
     pendientes = len(df_view[df_view['ESTADO_NUM'] == 0])
@@ -278,7 +265,7 @@ if not df_main.empty:
     falta_n1 = len(df_n1[df_n1['ESTADO_NUM'] == 0])
     falta_n2 = len(df_n2[df_n2['ESTADO_NUM'] == 0])
 
-    # Velocímetro Principal
+    # VELOCÍMETRO
     color_g = "red" if porcentaje < 50 else "orange" if porcentaje < 80 else "green"
     msg = "⚠️ Crítico" if porcentaje < 50 else "🔨 En Proceso" if porcentaje < 80 else "🏆 Excelente"
     
@@ -303,10 +290,8 @@ if not df_main.empty:
         st.info(f"Completado: **{cumplidos}/{total_reg}** cursos.")
         if pendientes == 0 and total_reg > 0: st.success("✅ ¡Todo al día!")
 
-    # 3. FILTROS RÁPIDOS
-    st.markdown(f"### 📊 Detalle {nombre_visual}:")
+    # FILTROS RÁPIDOS
     c1, c2, c3, c4, c5 = st.columns(5)
-    
     b_all = "primary" if st.session_state.filtro_activo == 'Todos' else "secondary"
     b_fal = "primary" if st.session_state.filtro_activo == 'Faltan' else "secondary"
     b_ok = "primary" if st.session_state.filtro_activo == 'Cumplieron' else "secondary"
@@ -319,10 +304,9 @@ if not df_main.empty:
     if c4.button(f"🔹 N1 (Falta {falta_n1})", type=b_n1, use_container_width=True): st.session_state.filtro_activo = 'Nivel 1'
     if c5.button(f"🔸 N2 (Falta {falta_n2})", type=b_n2, use_container_width=True): st.session_state.filtro_activo = 'Nivel 2'
 
-    # 4. TABLA
+    # TABLA
     st.markdown("<br>", unsafe_allow_html=True)
     df_table = df_view.copy()
-    
     if st.session_state.filtro_activo == 'Faltan': df_table = df_table[df_table['ESTADO_NUM'] == 0]
     elif st.session_state.filtro_activo == 'Cumplieron': df_table = df_table[df_table['ESTADO_NUM'] == 1]
     elif st.session_state.filtro_activo == 'Nivel 1': df_table = df_n1
@@ -330,19 +314,11 @@ if not df_main.empty:
 
     cols = ['SECTOR', 'CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
     if st.session_state.colaborador_activo == 'Todos': cols.insert(0, 'COLABORADOR')
-    
     cols_reales = [c for c in cols if c in df_table.columns]
     
     st.dataframe(
-        df_table[cols_reales], 
-        use_container_width=True, 
-        hide_index=True,
-        column_config={
-            "ESTADO_NUM": st.column_config.CheckboxColumn("OK", disabled=True),
-            "SECTOR": st.column_config.TextColumn("Sector", width="small"),
-            "COLABORADOR": st.column_config.TextColumn("Nombre", width="medium"),
-            "CURSO": st.column_config.TextColumn("Capacitación", width="large")
-        }
+        df_table[cols_reales], use_container_width=True, hide_index=True,
+        column_config={"ESTADO_NUM": st.column_config.CheckboxColumn("OK", disabled=True)}
     )
 else:
-    st.warning("No hay datos para mostrar.")
+    st.warning("No hay datos.")
