@@ -14,7 +14,6 @@ st.markdown("""
         font-weight: bold;
         border: 1px solid #dce775;
     }
-    /* Estilo para resaltar la selección en la barra lateral */
     section[data-testid="stSidebar"] .stRadio label {
         font-weight: bold;
     }
@@ -30,17 +29,19 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=
 def load_data():
     try:
         df = pd.read_csv(URL)
-        df.columns = df.columns.str.strip().str.title() # Normalizar nombres
+        # Normalizar nombres de columnas (Quitar espacios extra y poner Título)
+        df.columns = df.columns.str.strip().str.title()
         
-        # RENOMBRAR COLUMNAS
+        # --- MAPEO DE COLUMNAS (Aquí está el cambio clave) ---
         col_map = {
+            'Rol En El Concesionario': 'CARGO',    # Usamos la Columna A como el filtro principal
             'Nombre Del Colaborador': 'COLABORADOR',
-            'Cargo': 'CARGO',
             'Formacion': 'CURSO',
             'Tipo De Curso': 'TIPO',
             'Niveles': 'NIVEL',
             'Capacitaciones': 'ESTADO_NUM'
         }
+        # Renombrar solo las columnas que encuentre
         df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
         
         # LIMPIEZA DE DATOS
@@ -60,42 +61,44 @@ def load_data():
 
 df = load_data()
 
-# --- BARRA LATERAL (FILTRO POR CARGO) ---
-st.sidebar.title("🏢 Filtro por Cargo")
+# --- BARRA LATERAL (FILTRO POR ROL) ---
+st.sidebar.title("🏢 Filtro por Rol")
 
 df_filtrado_cargo = df.copy()
 
+# Variables para manejar la selección
+lista_cargos = []
+cargo_seleccionado = "Todos"
+
 if not df.empty and 'CARGO' in df.columns:
-    # 1. Obtenemos lista única de cargos ordenados
-    lista_cargos = sorted(df['CARGO'].unique().tolist())
-    # 2. Agregamos la opción "Todos" al principio
+    # 1. Lista de Roles únicos (de la Columna A)
+    lista_cargos = sorted(df['CARGO'].dropna().unique().tolist())
+    
+    # 2. Menú de selección
     opciones_menu = ["Todos"] + lista_cargos
+    cargo_seleccionado = st.sidebar.radio("Selecciona un Rol:", opciones_menu)
     
-    # 3. Creamos el selector (funciona como botones)
-    cargo_seleccionado = st.sidebar.radio("Selecciona un cargo:", opciones_menu)
-    
-    # 4. Filtramos la base de datos PRINCIPAL
+    # 3. Filtrado
     if cargo_seleccionado != "Todos":
         df_filtrado_cargo = df[df['CARGO'] == cargo_seleccionado]
-        st.sidebar.success(f"Filtrando: {cargo_seleccionado}")
-        st.sidebar.metric("Total Personas", len(df_filtrado_cargo))
+        st.sidebar.success(f"Rol: {cargo_seleccionado}")
+        st.sidebar.metric("Colaboradores", len(df_filtrado_cargo))
     else:
         st.sidebar.info("Mostrando toda la nómina")
 
 st.sidebar.markdown("---")
 
-# --- GESTIÓN DEL ESTADO (MEMORIA DE FILTROS SUPERIORES) ---
+# --- MEMORIA DE FILTROS SUPERIORES ---
 if 'filtro_activo' not in st.session_state:
     st.session_state.filtro_activo = 'Todos'
 
 # --- TÍTULO ---
-titulo_principal = f"🎓 Control de Formación 2026 - {cargo_seleccionado}"
+titulo_principal = f"🎓 Control de Formación - {cargo_seleccionado}"
 st.title(titulo_principal)
 
 if not df_filtrado_cargo.empty:
     
     # --- CÁLCULO DE INDICADORES (KPIs) ---
-    # Nota: Estos cálculos ahora obedecen al filtro de la barra lateral
     total_personas_cargo = len(df_filtrado_cargo)
     total_pendientes = len(df_filtrado_cargo[df_filtrado_cargo['ESTADO_NUM'] == 0])
     total_cumplieron = len(df_filtrado_cargo[df_filtrado_cargo['ESTADO_NUM'] == 1])
@@ -107,53 +110,44 @@ if not df_filtrado_cargo.empty:
     total_n1 = len(df_n1)
     total_n2 = len(df_n2)
 
-    # --- BOTONES DE FILTRO SUPERIOR ---
+    # --- BOTONERA SUPERIOR ---
     st.markdown("### 📊 Estado del Grupo Seleccionado:")
     
     c1, c2, c3, c4, c5 = st.columns(5)
     
-    # Colores de botones
+    # Estilos de botones
     b_all = "primary" if st.session_state.filtro_activo == 'Todos' else "secondary"
     b_fal = "primary" if st.session_state.filtro_activo == 'Faltan' else "secondary"
     b_ok = "primary" if st.session_state.filtro_activo == 'Cumplieron' else "secondary"
     b_n1 = "primary" if st.session_state.filtro_activo == 'Nivel 1' else "secondary"
     b_n2 = "primary" if st.session_state.filtro_activo == 'Nivel 2' else "secondary"
 
-    # Botonera
     if c1.button(f"📋 Ver Lista ({total_personas_cargo})", type=b_all, use_container_width=True):
         st.session_state.filtro_activo = 'Todos'
-        
     if c2.button(f"⏳ Faltan ({total_pendientes})", type=b_fal, use_container_width=True):
         st.session_state.filtro_activo = 'Faltan'
-
     if c3.button(f"✅ Cumplieron ({total_cumplieron})", type=b_ok, use_container_width=True):
         st.session_state.filtro_activo = 'Cumplieron'
-
     if c4.button(f"🔹 Nivel 1 ({total_n1})", type=b_n1, use_container_width=True):
         st.session_state.filtro_activo = 'Nivel 1'
-
     if c5.button(f"🔸 Nivel 2 ({total_n2})", type=b_n2, use_container_width=True):
         st.session_state.filtro_activo = 'Nivel 2'
 
     st.divider()
 
     # --- APLICACIÓN DEL FILTRO SUPERIOR ---
-    # Empezamos con el DF ya filtrado por cargo
     df_final_view = df_filtrado_cargo.copy()
     subtitulo = "Listado Completo"
 
     if st.session_state.filtro_activo == 'Faltan':
         df_final_view = df_final_view[df_final_view['ESTADO_NUM'] == 0]
         subtitulo = "⚠️ Personas Pendientes"
-        
     elif st.session_state.filtro_activo == 'Cumplieron':
         df_final_view = df_final_view[df_final_view['ESTADO_NUM'] == 1]
         subtitulo = "✅ Personas Cumplidoras"
-        
     elif st.session_state.filtro_activo == 'Nivel 1':
         df_final_view = df_n1
         subtitulo = "🔹 Listado Nivel 1"
-        
     elif st.session_state.filtro_activo == 'Nivel 2':
         df_final_view = df_n2
         subtitulo = "🔸 Listado Nivel 2"
@@ -171,10 +165,10 @@ if not df_filtrado_cargo.empty:
         column_config={
             "ESTADO_NUM": st.column_config.CheckboxColumn("Realizado", disabled=True),
             "COLABORADOR": st.column_config.TextColumn("Colaborador", width="medium"),
-            "CARGO": st.column_config.TextColumn("Cargo", width="medium"),
+            "CARGO": st.column_config.TextColumn("Rol / Cargo", width="medium"), # Etiqueta actualizada
             "CURSO": st.column_config.TextColumn("Capacitación", width="large"),
         }
     )
 
 else:
-    st.warning("No se encontraron datos. Verifica la conexión.")
+    st.warning("No se encontraron datos. Verifica la conexión con Google Sheets.")
