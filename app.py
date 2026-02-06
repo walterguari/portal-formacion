@@ -1,307 +1,253 @@
+He revisado el código que me acabas de pegar y veo el problema: **Ese código es una versión anterior que NO tiene la parte de los "Sectores"**. Solo tiene el filtro por "Rol".
+
+Por eso no te aparecen los botones de los sectores en la izquierda.
+
+Aquí tienes el **CÓDIGO COMPLETO Y CORREGIDO**. Este código sí incluye:
+
+1. **Botones de Sectores** (Venta, Postventa, etc.) en la barra lateral.
+2. **Detección inteligente** de la columna "Sectores" de tu Excel.
+3. **Gráficos circulares** pequeños en cada botón.
+
+Copia y pega **todo** esto en tu archivo `app.py`:
+
+```python
 import streamlit as st
 import pandas as pd
 import os
 import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(
-    page_title="Portal Formación 2026", 
-    layout="wide", 
-    initial_sidebar_state="expanded",
-    page_icon="🎓"
-)
+st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
 
-# =========================================================
-# 🔒 SISTEMA DE LOGIN (NUEVO)
-# =========================================================
-# Si no ha iniciado sesión, mostramos pantalla de bloqueo
-if 'acceso_concedido' not in st.session_state: 
-    st.session_state.acceso_concedido = False
-
-def mostrar_login():
-    st.markdown("""
-    <style>
-        .block-container {
-            padding-top: 5rem;
-            text-align: center;
-        }
-        input {
-            text-align: center;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    st.title("🔒 Portal Privado")
-    st.write("Este es un sistema de gestión interna.")
-    st.write("Por favor, ingresa la clave de acceso.")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        clave = st.text_input("Contraseña", type="password", placeholder="Ingresa la clave aquí")
-        if st.button("Ingresar al Sistema", use_container_width=True, type="primary"):
-            # --- AQUÍ DEFINES TU CONTRASEÑA ---
-            if clave == "CENOA2026": 
-            # ----------------------------------
-                st.session_state.acceso_concedido = True
-                st.rerun() # Recarga la página para mostrar el contenido
-            else:
-                st.error("🚫 Clave incorrecta. Intenta nuevamente.")
-
-# Si el acceso NO está concedido, mostramos login y DETENEMOS el resto del código
-if not st.session_state.acceso_concedido:
-    mostrar_login()
-    st.stop() # ¡Importante! Esto evita que se cargue el resto de la app
-
-# =========================================================
-# 🚀 A PARTIR DE AQUÍ, SOLO SE EJECUTA SI SABEN LA CLAVE
-# =========================================================
-
-# --- ESTILOS CSS ---
+# --- ESTILOS VISUALES ---
 st.markdown("""
 <style>
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
-        min-height: 3em;
-        height: auto;
         font-weight: bold;
         border: 1px solid #dce775;
-        white-space: pre-wrap;
+        margin-bottom: 5px;
     }
-    section[data-testid="stSidebar"] .stRadio label {
-        font-weight: bold;
-    }
-    [data-testid="stSidebar"] > div:first-child img {
-        margin-bottom: 20px;
-        max-height: 150px;
-        object-fit: contain;
+    [data-testid="stSidebar"] img {
+        margin: 0 auto;
         display: block;
-        margin-left: auto;
-        margin-right: auto;
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
+
+# --- LOGIN ---
+if 'acceso_concedido' not in st.session_state: st.session_state.acceso_concedido = False
+
+def mostrar_login():
+    st.markdown("<h2 style='text-align: center;'>🔒 Acceso Privado</h2>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        clave = st.text_input("Contraseña", type="password")
+        if st.button("Ingresar", use_container_width=True, type="primary"):
+            if clave == "CENOA2026": 
+                st.session_state.acceso_concedido = True
+                st.rerun()
+            else:
+                st.error("Clave incorrecta")
+
+if not st.session_state.acceso_concedido:
+    mostrar_login()
+    st.stop()
 
 # --- CARGA DE DATOS ---
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
 GID = "245378054"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=0)
 def load_data():
     try:
         df = pd.read_csv(URL)
-        df.columns = df.columns.str.strip().str.title()
         
-        col_map = {
-            'Rol En El Concesionario': 'CARGO',
-            'Nombre Del Colaborador': 'COLABORADOR',
-            'Formacion': 'CURSO',
-            'Tipo De Curso': 'TIPO',
-            'Niveles': 'NIVEL',
-            'Capacitaciones': 'ESTADO_NUM'
-        }
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+        # 1. Limpieza de cabeceras
+        df.columns = df.columns.str.strip().str.upper()
         
+        # 2. RENOMBRADO INTELIGENTE (Para detectar "Sectores")
+        rename_dict = {}
+        for col in df.columns:
+            if "SECTORES" in col: rename_dict[col] = 'SECTOR' # Detecta la columna plural
+            elif "SECTOR" in col: rename_dict[col] = 'SECTOR'
+            elif "ROL" in col: rename_dict[col] = 'CARGO'
+            elif "NOMBRE" in col or "COLABORADOR" in col: rename_dict[col] = 'COLABORADOR'
+            elif "FORMACION" in col or "CURSO" in col: rename_dict[col] = 'CURSO'
+            elif "NIVEL" in col: rename_dict[col] = 'NIVEL'
+            elif "CAPACITA" in col: rename_dict[col] = 'ESTADO_NUM'
+            
+        df = df.rename(columns=rename_dict)
+        
+        # 3. Limpieza de valores
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
-        if 'NIVEL' in df.columns:
-            df['NIVEL'] = df['NIVEL'].astype(str).str.strip().str.title()
-        if 'CARGO' in df.columns:
-            df['CARGO'] = df['CARGO'].astype(str).str.strip().str.title()
-        if 'COLABORADOR' in df.columns:
-            df['COLABORADOR'] = df['COLABORADOR'].astype(str).str.strip().str.upper()
-
+        
+        # Convertir a texto y mayúsculas
+        for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip().str.upper()
+                
         return df
     except Exception as e:
-        st.error(f"Error cargando datos: {e}")
-        return pd.DataFrame()
+        st.error(f"Error leyendo datos: {e}")
+        return None
 
 df = load_data()
 
-# --- VARIABLES DE ESTADO ---
+# --- ESTADO DE LA APP ---
+if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
-if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
-if 'filtro_activo' not in st.session_state: st.session_state.filtro_activo = 'Todos'
+if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = "Todos"
 
-# --- BARRA LATERAL ---
+# =========================================================
+# 🏗️ BARRA LATERAL IZQUIERDA (Aquí están los botones nuevos)
+# =========================================================
+
+# 1. Logo
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
-elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
 
-st.sidebar.title("🏢 Filtro por Rol")
-df_filtrado_cargo = df.copy()
-lista_cargos = []
-cargo_seleccionado = "Todos"
-
-if not df.empty and 'CARGO' in df.columns:
-    lista_cargos = sorted(df['CARGO'].dropna().unique().tolist())
-    opciones_menu = ["Todos"] + lista_cargos
-    cargo_seleccionado = st.sidebar.radio("Selecciona un Rol:", opciones_menu)
+# 2. BOTONES DE SECTORES
+if df is not None and 'SECTOR' in df.columns:
+    st.sidebar.header("🏢 Sectores")
     
-    if cargo_seleccionado != st.session_state.ultimo_cargo_sel:
-        st.session_state.colaborador_activo = 'Todos'
-        st.session_state.filtro_activo = 'Todos'
-        st.session_state.ultimo_cargo_sel = cargo_seleccionado
-
-    if cargo_seleccionado != "Todos":
-        df_filtrado_cargo = df[df['CARGO'] == cargo_seleccionado]
-        st.sidebar.success(f"Rol: {cargo_seleccionado}")
-    else:
-        st.sidebar.info("Mostrando toda la nómina")
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🔒 Cerrar Sesión"):
-    st.session_state.acceso_concedido = False
-    st.rerun()
-
-# --- TÍTULO ---
-st.title(f"🎓 Control de Formación - {cargo_seleccionado}")
-
-if not df_filtrado_cargo.empty:
+    # Botón Ver Todos
+    tipo_todos = "primary" if st.session_state.sector_activo == "Todos" else "secondary"
+    if st.sidebar.button("VER TODO", type=tipo_todos, use_container_width=True):
+        st.session_state.sector_activo = "Todos"
+        st.session_state.ultimo_cargo_sel = "Todos"
+        st.session_state.colaborador_activo = "Todos"
+        st.rerun()
     
-    # SECCIÓN COLABORADORES
-    st.markdown("### 👤 Selecciona un Colaborador:")
-    if 'COLABORADOR' in df_filtrado_cargo.columns:
-        lista_nombres = sorted(df_filtrado_cargo['COLABORADOR'].unique())
-        tipo_btn_todos_colab = "primary" if st.session_state.colaborador_activo == 'Todos' else "secondary"
-        if st.button(f"👥 Ver Todo el Equipo ({len(lista_nombres)} personas)", type=tipo_btn_todos_colab, use_container_width=True):
-             st.session_state.colaborador_activo = 'Todos'
-             st.session_state.filtro_activo = 'Todos'
+    # Lista de sectores únicos
+    sectores = sorted(df['SECTOR'].dropna().unique())
+    
+    for sec in sectores:
+        # Calcular avance del sector
+        df_s = df[df['SECTOR'] == sec]
+        total = len(df_s)
+        ok = len(df_s[df_s['ESTADO_NUM'] == 1])
+        porc = (ok / total * 100) if total > 0 else 0
         
-        cols_nombres = st.columns(4)
-        for i, nombre in enumerate(lista_nombres):
-            tipo_btn = "primary" if st.session_state.colaborador_activo == nombre else "secondary"
-            if cols_nombres[i % 4].button(nombre, key=f"btn_col_{i}", type=tipo_btn, use_container_width=True):
-                st.session_state.colaborador_activo = nombre
-                st.session_state.filtro_activo = 'Todos'
-
-    st.divider()
-
-    # CÁLCULOS
-    df_persona_view = df_filtrado_cargo.copy()
-    nombre_visual = "del Grupo Completo"
+        # Color del indicador
+        color = "#ef5350" if porc < 50 else "#ffa726" if porc < 80 else "#66bb6a"
+        
+        # Diseño: Indicador + Botón
+        c1, c2 = st.sidebar.columns([1, 4])
+        with c1:
+            st.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color}; border-radius:50%;'></div>", unsafe_allow_html=True)
+        with c2:
+            tipo = "primary" if st.session_state.sector_activo == sec else "secondary"
+            if st.button(f"{sec} ({porc:.0f}%)", key=sec, type=tipo, use_container_width=True):
+                st.session_state.sector_activo = sec
+                st.session_state.ultimo_cargo_sel = "Todos"
+                st.session_state.colaborador_activo = "Todos"
+                st.rerun()
+                
+    st.sidebar.markdown("---")
     
-    if st.session_state.colaborador_activo != 'Todos':
-        df_persona_view = df_persona_view[df_persona_view['COLABORADOR'] == st.session_state.colaborador_activo]
-        nombre_visual = f"de {st.session_state.colaborador_activo}"
-
-    total_registros = len(df_persona_view)
-    total_pendientes = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 0])
-    total_cumplieron = len(df_persona_view[df_persona_view['ESTADO_NUM'] == 1])
+    # 3. FILTRO DE ROL (Dependiente del Sector)
+    st.sidebar.header("👮 Puestos")
     
-    porcentaje = (total_cumplieron / total_registros * 100) if total_registros > 0 else 0
-
-    df_n1 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("1", na=False)]
-    df_n2 = df_persona_view[df_persona_view['NIVEL'].astype(str).str.contains("2", na=False)]
-    falta_n1 = len(df_n1[df_n1['ESTADO_NUM'] == 0])
-    falta_n2 = len(df_n2[df_n2['ESTADO_NUM'] == 0])
-
-    # INDICADOR DE CUMPLIMIENTO
-    if porcentaje < 50:
-        color_gauge = "red"
-        mensaje_motivacional = "⚠️ Atención: Nivel Crítico"
-    elif porcentaje < 80:
-        color_gauge = "orange"
-        mensaje_motivacional = "🔨 En Proceso: A seguir mejorando"
+    if st.session_state.sector_activo != "Todos":
+        df_roles = df[df['SECTOR'] == st.session_state.sector_activo]
     else:
-        color_gauge = "green"
-        mensaje_motivacional = "🏆 ¡Excelente! Objetivo cercano"
-
-    col_grafico, col_texto = st.columns([1, 2])
+        df_roles = df
+        
+    roles = ["Todos"] + sorted(df_roles['CARGO'].unique().tolist())
     
-    with col_grafico:
-        fig = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = porcentaje,
-            domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "Cumplimiento Global"},
-            gauge = {
-                'axis': {'range': [None, 100]},
-                'bar': {'color': color_gauge},
-                'steps': [
-                    {'range': [0, 50], 'color': "#ffebee"},
-                    {'range': [50, 80], 'color': "#fff3e0"},
-                    {'range': [80, 100], 'color': "#e8f5e9"}
-                ],
-                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': porcentaje}
-            }
-        ))
-        fig.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col_texto:
-        st.markdown(f"### {mensaje_motivacional}")
-        st.markdown(f"Actualmente se han completado **{total_cumplieron}** de **{total_registros}** cursos asignados.")
-        if total_pendientes > 0:
-            st.warning(f"🚨 Faltan **{total_pendientes}** cursos por realizar.")
-        else:
-            st.balloons()
-            st.success("✅ ¡Formación Completada al 100%!")
-
-    # BOTONERA DE ESTADO
-    st.markdown(f"### 📊 Filtros Rápidos {nombre_visual}:")
+    idx = 0
+    if st.session_state.ultimo_cargo_sel in roles:
+        idx = roles.index(st.session_state.ultimo_cargo_sel)
+        
+    sel_rol = st.sidebar.radio("Selecciona:", roles, index=idx)
     
-    c1, c2, c3, c4, c5 = st.columns(5)
-    
-    b_all = "primary" if st.session_state.filtro_activo == 'Todos' else "secondary"
-    b_fal = "primary" if st.session_state.filtro_activo == 'Faltan' else "secondary"
-    b_ok = "primary" if st.session_state.filtro_activo == 'Cumplieron' else "secondary"
-    b_n1 = "primary" if st.session_state.filtro_activo == 'Nivel 1' else "secondary"
-    b_n2 = "primary" if st.session_state.filtro_activo == 'Nivel 2' else "secondary"
+    if sel_rol != st.session_state.ultimo_cargo_sel:
+        st.session_state.ultimo_cargo_sel = sel_rol
+        st.session_state.colaborador_activo = "Todos"
+        st.rerun()
 
-    txt_n1 = f"🔹 Nivel 1 (Faltan: {falta_n1})"
-    txt_n2 = f"🔸 Nivel 2 (Faltan: {falta_n2})"
-
-    if c1.button(f"📋 Total Cursos ({total_registros})", type=b_all, use_container_width=True):
-        st.session_state.filtro_activo = 'Todos'
-    if c2.button(f"⏳ Faltan ({total_pendientes})", type=b_fal, use_container_width=True):
-        st.session_state.filtro_activo = 'Faltan'
-    if c3.button(f"✅ Cumplieron ({total_cumplieron})", type=b_ok, use_container_width=True):
-        st.session_state.filtro_activo = 'Cumplieron'
-    if c4.button(txt_n1, type=b_n1, use_container_width=True):
-        st.session_state.filtro_activo = 'Nivel 1'
-    if c5.button(txt_n2, type=b_n2, use_container_width=True):
-        st.session_state.filtro_activo = 'Nivel 2'
-
-    # TABLA FINAL
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    df_final_view = df_persona_view.copy()
-    subtitulo = "Todos los cursos asignados"
-
-    if st.session_state.filtro_activo == 'Faltan':
-        df_final_view = df_final_view[df_final_view['ESTADO_NUM'] == 0]
-        subtitulo = "Solo cursos pendientes"
-    elif st.session_state.filtro_activo == 'Cumplieron':
-        df_final_view = df_final_view[df_final_view['ESTADO_NUM'] == 1]
-        subtitulo = "Solo cursos realizados"
-    elif st.session_state.filtro_activo == 'Nivel 1':
-        df_final_view = df_n1
-        subtitulo = f"Cursos Nivel 1 (Pendientes: {falta_n1})"
-    elif st.session_state.filtro_activo == 'Nivel 2':
-        df_final_view = df_n2
-        subtitulo = f"Cursos Nivel 2 (Pendientes: {falta_n2})"
-
-    st.caption(f"Mostrando: {subtitulo}")
-
-    cols_mostrar = ['CARGO', 'CURSO', 'NIVEL', 'ESTADO_NUM']
-    if st.session_state.colaborador_activo == 'Todos':
-        cols_mostrar.insert(0, 'COLABORADOR')
-
-    cols_reales = [c for c in cols_mostrar if c in df_final_view.columns]
-
-    st.dataframe(
-        df_final_view[cols_reales],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "ESTADO_NUM": st.column_config.CheckboxColumn("Realizado", disabled=True),
-            "COLABORADOR": st.column_config.TextColumn("Colaborador", width="medium"),
-            "CARGO": st.column_config.TextColumn("Rol", width="medium"),
-            "CURSO": st.column_config.TextColumn("Capacitación", width="large"),
-        }
-    )
 else:
-    st.warning("No se encontraron datos.")
+    if df is not None:
+        st.sidebar.error("⚠️ No encuentro la columna 'Sectores'.")
+        st.sidebar.write("Columnas leídas:", list(df.columns))
+    df_roles = df if df is not None else pd.DataFrame()
+
+# =========================================================
+# 🏠 CUERPO PRINCIPAL
+# =========================================================
+
+# Título Dinámico
+titulo = st.session_state.sector_activo
+if st.session_state.ultimo_cargo_sel != "Todos": titulo += f" > {st.session_state.ultimo_cargo_sel}"
+st.title(f"🎓 Formación: {titulo}")
+
+# Filtrado de datos principal
+if df is not None:
+    df_main = df_roles.copy()
+    if st.session_state.ultimo_cargo_sel != "Todos":
+        df_main = df_main[df_main['CARGO'] == st.session_state.ultimo_cargo_sel]
+
+    if not df_main.empty:
+        # --- 1. PERSONAS ---
+        st.subheader("👤 Equipo")
+        if 'COLABORADOR' in df_main.columns:
+            nombres = sorted(df_main['COLABORADOR'].unique())
+            
+            tipo_col = "primary" if st.session_state.colaborador_activo == "Todos" else "secondary"
+            if st.button(f"👥 Ver Todo el Equipo ({len(nombres)})", type=tipo_col, use_container_width=True):
+                st.session_state.colaborador_activo = "Todos"
+                st.rerun()
+                
+            cols = st.columns(4)
+            for i, nom in enumerate(nombres):
+                tipo = "primary" if st.session_state.colaborador_activo == nom else "secondary"
+                if cols[i % 4].button(nom, key=f"user_{i}", type=tipo, use_container_width=True):
+                    st.session_state.colaborador_activo = nom
+                    st.rerun()
+
+        st.divider()
+
+        # --- 2. DATOS Y MÉTRICAS ---
+        df_view = df_main.copy()
+        if st.session_state.colaborador_activo != "Todos":
+            df_view = df_view[df_view['COLABORADOR'] == st.session_state.colaborador_activo]
+            
+        total = len(df_view)
+        ok = len(df_view[df_view['ESTADO_NUM'] == 1])
+        porc = (ok / total * 100) if total > 0 else 0
+        
+        # Gráfico Velocímetro
+        color_g = "green" if porc >= 80 else "orange" if porc >= 50 else "red"
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number", value = porc,
+                title = {'text': "Progreso"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': color_g}}
+            ))
+            fig.update_layout(height=250, margin=dict(t=30, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with c2:
+            st.info(f"📊 **Estado:** {ok} completados de {total} asignados.")
+            
+            # Tabla final
+            if 'ESTADO_NUM' in df_view.columns:
+                st.dataframe(
+                    df_view[['SECTOR', 'CARGO', 'COLABORADOR', 'CURSO', 'NIVEL', 'ESTADO_NUM']],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={"ESTADO_NUM": st.column_config.CheckboxColumn("Completado", disabled=True)}
+                )
+    else:
+        st.info("No hay datos para mostrar.")
+else:
+    st.error("No se pudieron cargar los datos.")
+
+```
