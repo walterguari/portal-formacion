@@ -11,6 +11,7 @@ st.markdown("""
 <style>
     div.stButton > button {width: 100%; border-radius: 8px; font-weight: bold; border: 1px solid #dce775; margin-bottom: 5px;}
     [data-testid="stSidebar"] img {display: block; margin: 0 auto 20px auto;}
+    .big-font { font-size:20px !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -42,11 +43,8 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=
 def load_data():
     try:
         df = pd.read_csv(URL)
-        
-        # 1. Estandarizar cabeceras
         df.columns = df.columns.str.strip().str.upper()
         
-        # 2. Mapa de renombrado
         col_map = {}
         for col in df.columns:
             if "SECTORES" in col: col_map[col] = 'SECTOR'
@@ -58,23 +56,17 @@ def load_data():
             elif "CAPACITA" in col: col_map[col] = 'ESTADO_NUM'
 
         df = df.rename(columns=col_map)
-        
-        # 3. ¡SOLUCIÓN AL ERROR! Eliminar columnas duplicadas
-        # Si por error hay dos columnas "SECTOR", se queda solo con la primera
-        df = df.loc[:, ~df.columns.duplicated()]
+        df = df.loc[:, ~df.columns.duplicated()] # Elimina columnas duplicadas
 
-        # 4. Limpieza de datos
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
         
-        # Convertir textos a mayúsculas
         for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
 
         return df
     except Exception as e:
-        st.error(f"Error cargando datos: {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -97,7 +89,6 @@ if not df.empty and 'SECTOR' in df.columns:
         st.rerun()
 
     for sec in sorted(df['SECTOR'].unique()):
-        # Indicador visual
         df_s = df[df['SECTOR'] == sec]
         avance = (len(df_s[df_s['ESTADO_NUM']==1]) / len(df_s) * 100) if len(df_s) > 0 else 0
         color = "#ef5350" if avance < 50 else "#ffa726" if avance < 80 else "#66bb6a"
@@ -152,20 +143,38 @@ if not df_main.empty:
     
     st.divider()
     
-    # DATOS
+    # DATOS Y CÁLCULOS
     df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
     total = len(df_view)
     ok = len(df_view[df_view['ESTADO_NUM']==1])
     porc = (ok/total*100) if total > 0 else 0
     
+    # --- LÓGICA DE EMOCIONES (NUEVO) ---
+    if porc == 100:
+        mensaje = "🏆 ¡IMPRESIONANTE! OBJETIVO CUMPLIDO AL 100%"
+        color_msg = "green"
+        st.balloons() # ¡Globos!
+    elif porc >= 80:
+        mensaje = "🚀 ¡Excelente trabajo! Ya casi llegamos a la meta."
+        color_msg = "green"
+    elif porc >= 50:
+        mensaje = "🔨 Buen avance, pero falta el último esfuerzo."
+        color_msg = "orange"
+    else:
+        mensaje = "⚠️ Atención: El nivel de avance es crítico. ¡A ponerse las pilas!"
+        color_msg = "red"
+
+    # Mostrar Mensaje
+    st.markdown(f"<div style='background-color:{'#e8f5e9' if color_msg=='green' else '#fff3e0' if color_msg=='orange' else '#ffebee'}; padding:15px; border-radius:10px; border-left: 5px solid {color_msg}; margin-bottom: 20px;'><h3 style='margin:0; color:{color_msg}'>{mensaje}</h3></div>", unsafe_allow_html=True)
+
     # GRÁFICO
     c1, c2 = st.columns([1, 2])
     with c1:
-        fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, title={'text':"Avance"}, gauge={'axis':{'range':[None,100]}, 'bar':{'color': ("green" if porc>=80 else "orange" if porc>=50 else "red")}}))
+        fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, title={'text':"Avance"}, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
         fig.update_layout(height=250, margin=dict(t=30, b=20))
         st.plotly_chart(fig, use_container_width=True)
     with c2:
-        st.info(f"Completado: **{ok}/{total}**")
+        st.info(f"Se han completado **{ok}** de **{total}** cursos asignados.")
         st.dataframe(df_view[['SECTOR','CARGO','CURSO','ESTADO_NUM']], use_container_width=True, hide_index=True)
 else:
     st.warning("No hay datos.")
