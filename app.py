@@ -1,16 +1,3 @@
-He revisado el código que me acabas de pegar y veo el problema: **Ese código es una versión anterior que NO tiene la parte de los "Sectores"**. Solo tiene el filtro por "Rol".
-
-Por eso no te aparecen los botones de los sectores en la izquierda.
-
-Aquí tienes el **CÓDIGO COMPLETO Y CORREGIDO**. Este código sí incluye:
-
-1. **Botones de Sectores** (Venta, Postventa, etc.) en la barra lateral.
-2. **Detección inteligente** de la columna "Sectores" de tu Excel.
-3. **Gráficos circulares** pequeños en cada botón.
-
-Copia y pega **todo** esto en tu archivo `app.py`:
-
-```python
 import streamlit as st
 import pandas as pd
 import os
@@ -37,25 +24,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIN ---
-if 'acceso_concedido' not in st.session_state: st.session_state.acceso_concedido = False
-
-def mostrar_login():
-    st.markdown("<h2 style='text-align: center;'>🔒 Acceso Privado</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        clave = st.text_input("Contraseña", type="password")
-        if st.button("Ingresar", use_container_width=True, type="primary"):
-            if clave == "CENOA2026": 
-                st.session_state.acceso_concedido = True
-                st.rerun()
-            else:
-                st.error("Clave incorrecta")
-
-if not st.session_state.acceso_concedido:
-    mostrar_login()
-    st.stop()
-
 # --- CARGA DE DATOS ---
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
 GID = "245378054"
@@ -69,11 +37,12 @@ def load_data():
         # 1. Limpieza de cabeceras
         df.columns = df.columns.str.strip().str.upper()
         
-        # 2. RENOMBRADO INTELIGENTE (Para detectar "Sectores")
+        # 2. RENOMBRADO INTELIGENTE
+        # Esto busca "SECTOR" en tu Excel aunque tenga espacios o sea singular/plural
         rename_dict = {}
         for col in df.columns:
-            if "SECTORES" in col: rename_dict[col] = 'SECTOR' # Detecta la columna plural
-            elif "SECTOR" in col: rename_dict[col] = 'SECTOR'
+            if "SECTOR" in col: rename_dict[col] = 'SECTOR' # Detecta "Sector" o "Sectores"
+            elif "AREA" in col: rename_dict[col] = 'SECTOR'
             elif "ROL" in col: rename_dict[col] = 'CARGO'
             elif "NOMBRE" in col or "COLABORADOR" in col: rename_dict[col] = 'COLABORADOR'
             elif "FORMACION" in col or "CURSO" in col: rename_dict[col] = 'CURSO'
@@ -104,7 +73,7 @@ if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = "Todos"
 
 # =========================================================
-# 🏗️ BARRA LATERAL IZQUIERDA (Aquí están los botones nuevos)
+# 🏗️ BARRA LATERAL IZQUIERDA
 # =========================================================
 
 # 1. Logo
@@ -124,7 +93,7 @@ if df is not None and 'SECTOR' in df.columns:
         st.rerun()
     
     # Lista de sectores únicos
-    sectores = sorted(df['SECTOR'].dropna().unique())
+    sectores = sorted(df['SECTOR'].unique())
     
     for sec in sectores:
         # Calcular avance del sector
@@ -173,7 +142,7 @@ if df is not None and 'SECTOR' in df.columns:
 
 else:
     if df is not None:
-        st.sidebar.error("⚠️ No encuentro la columna 'Sectores'.")
+        st.sidebar.error("⚠️ No encuentro la columna 'Sector'.")
         st.sidebar.write("Columnas leídas:", list(df.columns))
     df_roles = df if df is not None else pd.DataFrame()
 
