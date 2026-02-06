@@ -59,7 +59,7 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=
 def load_data():
     try:
         df = pd.read_csv(URL)
-        df.columns = df.columns.str.strip().str.upper() # Todo a mayúsculas para facilitar búsqueda
+        df.columns = df.columns.str.strip().str.upper() 
         
         # MAPEO DE COLUMNAS (Detecta "Sectores" o "Sector")
         col_map = {}
