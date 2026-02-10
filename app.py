@@ -196,10 +196,11 @@ with tab1:
 # PESTAÑA 2: PLANIFICADOR (DÍAS HÁBILES)
 # ---------------------------------------------------------
 with tab2:
-    st.markdown("### 📅 Planificación al 31 de Marzo 2026")
+    # --- CAMBIO DE FECHA: AHORA ES 20 DE MARZO ---
+    fecha_fin = datetime(2026, 3, 20)
+    st.markdown("### 📅 Planificación al 20 de Marzo 2026")
     
     # 1. Configuración de Fechas
-    fecha_fin = datetime(2026, 3, 31)
     fecha_hoy = datetime.now()
     
     # CÁLCULO DE DÍAS HÁBILES (Lunes a Viernes)
@@ -217,7 +218,7 @@ with tab2:
     if dias_habiles < 0:
         st.error("🚨 ¡La fecha límite ha pasado!")
     else:
-        st.success(f"🗓️ Quedan **{dias_habiles} días hábiles** (aprox. {semanas_restantes} semanas de trabajo) hasta el cierre.")
+        st.success(f"🗓️ Quedan **{dias_habiles} días hábiles** (aprox. {semanas_restantes} semanas de trabajo) hasta el cierre del 20/03.")
 
     st.divider()
 
@@ -245,13 +246,13 @@ with tab2:
             with c_info:
                 st.markdown(f"#### 🎯 {titulo_plan}")
                 st.write(f"Cursos pendientes: **{total_pendientes_plan}**")
-                st.info(f"💡 Objetivo: Completar **{ritmo_semanal} cursos por semana**.")
+                st.info(f"💡 Nuevo Objetivo: Completar **{ritmo_semanal} cursos por semana**.")
             
             with c_metric:
                 st.metric("Meta Semanal", f"{ritmo_semanal}", "Cursos")
 
             # --- GENERADOR DE AGENDA ---
-            st.subheader("📆 Cronograma Sugerido")
+            st.subheader("📆 Cronograma Sugerido (Acelerado)")
             
             cursos_pendientes = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
             semanas_dict = {i: [] for i in range(1, semanas_restantes + 1)}
@@ -264,7 +265,6 @@ with tab2:
             for i in range(1, semanas_restantes + 1):
                 # Calculamos las fechas de inicio y fin de esa semana "laboral"
                 inicio_sem = fecha_hoy + timedelta(weeks=i-1)
-                fin_sem = fecha_hoy + timedelta(weeks=i)
                 
                 tareas_semana = semanas_dict[i]
                 titulo_expander = f"📌 Semana {i} (Meta: {len(tareas_semana)} cursos)"
@@ -277,4 +277,4 @@ with tab2:
                     st.caption(f"🏁 Semana {i}: Libre (Plan cumplido)")
 
         else:
-            st.error("⏳ No quedan días hábiles suficientes para planificar con holgura.")
+            st.error("⏳ ¡Cuidado! Queda muy poco tiempo para la cantidad de cursos pendientes.")
