@@ -196,7 +196,7 @@ with tab1:
 # PESTAÑA 2: PLANIFICADOR (DÍAS HÁBILES)
 # ---------------------------------------------------------
 with tab2:
-    # --- CAMBIO DE FECHA: AHORA ES 20 DE MARZO ---
+    # --- FECHA LÍMITE: 20 DE MARZO DE 2026 ---
     fecha_fin = datetime(2026, 3, 20)
     st.markdown("### 📅 Planificación al 20 de Marzo 2026")
     
@@ -252,7 +252,7 @@ with tab2:
                 st.metric("Meta Semanal", f"{ritmo_semanal}", "Cursos")
 
             # --- GENERADOR DE AGENDA ---
-            st.subheader("📆 Cronograma Sugerido (Acelerado)")
+            st.subheader("📆 Cronograma Sugerido")
             
             cursos_pendientes = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
             semanas_dict = {i: [] for i in range(1, semanas_restantes + 1)}
