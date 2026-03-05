@@ -72,7 +72,6 @@ def load_data():
 
         return df
     except Exception as e:
-        st.error(f"Error al cargar datos: {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -143,6 +142,7 @@ tab1, tab2 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt"])
 # ---------------------------------------------------------
 with tab1:
     if not df_main.empty:
+        # SELECCIÓN DE EQUIPO CON % INDIVIDUAL
         st.markdown("### 👤 Selecciona Equipo")
         nombres = sorted(df_main['COLABORADOR'].unique())
         
@@ -152,14 +152,21 @@ with tab1:
              st.rerun()
         
         for i, nom in enumerate(nombres):
-            if cols[(i+1)%4].button(nom, key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
+            df_colab = df_main[df_main['COLABORADOR'] == nom]
+            total_c = len(df_colab)
+            ok_c = len(df_colab[df_colab['ESTADO_NUM'] == 1])
+            porc_c = (ok_c / total_c * 100) if total_c > 0 else 0
+            
+            texto_boton = f"{nom} ({porc_c:.0f}%)"
+            
+            if cols[(i+1)%4].button(texto_boton, key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom
                 st.rerun()
         
         st.divider()
 
         # SELECTORES DE NIVEL
-        st.markdown("### ⚖️ Filtrar por Nivel de Formación")
+        st.markdown("### ⚖️ Filtrar Indicador por Nivel")
         c_n1, c_n2, c_nb = st.columns(3)
         with c_n1:
             if st.button("NIVEL 1", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 1' else "secondary")):
@@ -191,8 +198,8 @@ with tab1:
             fig.update_layout(height=250, margin=dict(t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.info(f"Mostrando **{ok}** de **{total}** cursos.")
-            st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
+            st.info(f"Completado: **{ok}** de **{total}** cursos.")
+            st.dataframe(df_view_calc[['SECTOR','CARGO','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # PESTAÑA 2: PLANIFICADOR & GANTT
@@ -201,7 +208,6 @@ with tab2:
     fecha_fin = datetime(2026, 3, 20)
     fecha_hoy = datetime.now()
     
-    # Cálculo días hábiles
     dias_habiles = 0
     temp_date = fecha_hoy
     while temp_date <= fecha_fin:
@@ -210,7 +216,8 @@ with tab2:
     
     semanas_restantes = max(1, math.ceil(dias_habiles / 5))
 
-    st.subheader(f"📅 Planificación al 20/03/2026 ({dias_habiles} días hábiles restantes)")
+    st.subheader(f"📅 Planificación al 20/03/2026")
+    st.info(f"Quedan **{dias_habiles} días hábiles** (aprox. {semanas_restantes} semanas).")
     
     df_pendientes = df_main[df_main['ESTADO_NUM'] == 0]
     if st.session_state.nivel_seleccionado != 'Ambos':
@@ -223,10 +230,10 @@ with tab2:
 
     if not df_plan.empty:
         ritmo = math.ceil(len(df_plan) / semanas_restantes)
-        st.metric("Meta Semanal Requerida", f"{ritmo} cursos/semana")
+        st.metric("Meta de Capacitación", f"{ritmo} cursos/semana")
 
         # --- GRÁFICO DE GANTT ---
-        st.markdown("### 📊 Cronograma Visual de Capacitación")
+        st.markdown("### 📊 Cronograma Visual (Gantt)")
         df_gantt = []
         cursos_list = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
         
@@ -234,19 +241,24 @@ with tab2:
             num_sem = (i // ritmo)
             inicio = fecha_hoy + timedelta(weeks=num_sem)
             fin = inicio + timedelta(days=4)
-            df_gantt.append(dict(Task=curso[0], Start=inicio.strftime('%Y-%m-%d'), Finish=fin.strftime('%Y-%m-%d'), Resource=curso[2], Description=curso[1]))
+            df_gantt.append(dict(
+                Task=curso[0], 
+                Start=inicio.strftime('%Y-%m-%d'), 
+                Finish=fin.strftime('%Y-%m-%d'), 
+                Resource=curso[2]
+            ))
 
         if df_gantt:
             fig_gantt = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
-            fig_gantt.update_layout(height=400)
+            fig_gantt.update_layout(height=450)
             st.plotly_chart(fig_gantt, use_container_width=True)
 
         # --- AGENDA DETALLADA ---
-        st.markdown("### 📆 Detalle por Semanas")
+        st.markdown("### 📆 Agenda por Semanas")
         for s in range(semanas_restantes):
             tareas = cursos_list[s*ritmo : (s+1)*ritmo]
             if tareas:
                 with st.expander(f"Semana {s+1}"):
                     st.table(pd.DataFrame(tareas, columns=['Colaborador', 'Curso', 'Nivel']))
     else:
-        st.success("🎉 ¡No hay cursos pendientes para esta selección!")
+        st.success("🎉 ¡Objetivo cumplido! No hay tareas pendientes para esta selección.")
