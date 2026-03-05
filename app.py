@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.graph_objects as go
+import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
 
@@ -52,8 +53,7 @@ def load_data():
         
         col_map = {}
         for col in df.columns:
-            if "SECTORES" in col: col_map[col] = 'SECTOR'
-            elif "SECTOR" in col: col_map[col] = 'SECTOR'
+            if "SECTORES" in col or "SECTOR" in col: col_map[col] = 'SECTOR'
             elif "ROL" in col: col_map[col] = 'CARGO'
             elif "NOMBRE" in col or "COLABORADOR" in col: col_map[col] = 'COLABORADOR'
             elif "FORMACION" in col: col_map[col] = 'CURSO'
@@ -72,6 +72,7 @@ def load_data():
 
         return df
     except Exception as e:
+        st.error(f"Error al cargar datos: {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -80,7 +81,6 @@ df = load_data()
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
-# NUEVO: Estado para controlar el nivel seleccionado ("Ambos", "Nivel 1", "Nivel 2")
 if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
 # --- BARRA LATERAL ---
@@ -108,7 +108,6 @@ if not df.empty and 'SECTOR' in df.columns:
                 st.session_state.ultimo_cargo_sel = "Todos"
                 st.session_state.colaborador_activo = "Todos"
                 st.rerun()
-    st.sidebar.markdown("---")
 
 # FILTRO ROL
 st.sidebar.title("👮 Puestos")
@@ -133,193 +132,121 @@ if sel_rol != "Todos": titulo += f" > {sel_rol}"
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
 # =========================================================
-# 📌 PESTAÑAS (TABS)
+# 📌 CUERPO PRINCIPAL
 # =========================================================
 st.title(f"🎓 Gestión de Formación: {titulo}")
 
-tab1, tab2 = st.tabs(["📊 Tablero de Control", "📅 Planificador (Días Hábiles)"])
+tab1, tab2 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt"])
 
 # ---------------------------------------------------------
 # PESTAÑA 1: TABLERO DE CONTROL
 # ---------------------------------------------------------
 with tab1:
     if not df_main.empty:
-        # PERSONAS
         st.markdown("### 👤 Selecciona Equipo")
         nombres = sorted(df_main['COLABORADOR'].unique())
-        if st.button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
+        
+        cols = st.columns(4)
+        if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
              st.session_state.colaborador_activo = 'Todos'
              st.rerun()
         
-        cols = st.columns(4)
         for i, nom in enumerate(nombres):
-            if cols[i%4].button(nom, key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
+            if cols[(i+1)%4].button(nom, key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom
                 st.rerun()
         
         st.divider()
 
-        # =========================================================
-        # 🆕 MODIFICACIÓN: SELECCIÓN DE NIVEL
-        # =========================================================
-        st.markdown("### ⚖️ Ver Indicador por Nivel")
-        col_n1, col_n2, col_ambos = st.columns(3)
-        
-        with col_n1:
-            if st.button("Nivel 1", type=("primary" if st.session_state.nivel_seleccionado == 'Nivel 1' else "secondary")):
-                st.session_state.nivel_seleccionado = 'Nivel 1'
-                st.rerun()
-        with col_n2:
-            if st.button("Nivel 2", type=("primary" if st.session_state.nivel_seleccionado == 'Nivel 2' else "secondary")):
-                st.session_state.nivel_seleccionado = 'Nivel 2'
-                st.rerun()
-        with col_ambos:
-            if st.button("Ambos Niveles", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
-                st.session_state.nivel_seleccionado = 'Ambos'
-                st.rerun()
-        
-        st.markdown(f"**Visualizando:** {st.session_state.nivel_seleccionado}")
-        st.divider()
-        # =========================================================
-        
-        # CÁLCULOS
+        # SELECTORES DE NIVEL
+        st.markdown("### ⚖️ Filtrar por Nivel de Formación")
+        c_n1, c_n2, c_nb = st.columns(3)
+        with c_n1:
+            if st.button("NIVEL 1", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 1' else "secondary")):
+                st.session_state.nivel_seleccionado = 'NIVEL 1'; st.rerun()
+        with c_n2:
+            if st.button("NIVEL 2", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 2' else "secondary")):
+                st.session_state.nivel_seleccionado = 'NIVEL 2'; st.rerun()
+        with c_nb:
+            if st.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
+                st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
+
+        # Filtrado de cálculos
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        
-        # --- NUEVO: Filtrar df_view por Nivel seleccionado antes del cálculo ---
-        if st.session_state.nivel_seleccionado == 'Nivel 1':
-            df_view_calc = df_view[df_view['NIVEL'] == 'NIVEL 1']
-        elif st.session_state.nivel_seleccionado == 'Nivel 2':
-            df_view_calc = df_view[df_view['NIVEL'] == 'NIVEL 2']
-        else: # 'Ambos'
+        if st.session_state.nivel_seleccionado != 'Ambos':
+            df_view_calc = df_view[df_view['NIVEL'] == st.session_state.nivel_seleccionado]
+        else:
             df_view_calc = df_view
-        # -------------------------------------------------------------------------
 
         total = len(df_view_calc)
         ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1])
         porc = (ok/total*100) if total > 0 else 0
         
-        # EMOCIONES
-        if porc == 100:
-            mensaje = "🏆 ¡OBJETIVO CUMPLIDO! FELICITACIONES"
-            color_msg = "green"
-            st.balloons()
-        elif porc >= 80:
-            mensaje = "🚀 ¡Excelente ritmo! Recta final."
-            color_msg = "green"
-        elif porc >= 50:
-            mensaje = "🔨 Buen trabajo, a no bajar los brazos."
-            color_msg = "orange"
-        else:
-            mensaje = "⚠️ Nivel Crítico: Se requiere plan de acción inmediato."
-            color_msg = "red"
+        color_msg = "green" if porc >= 80 else "orange" if porc >= 50 else "red"
+        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {color_msg};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}%</h4></div>", unsafe_allow_html=True)
 
-        # Mostrar el mensaje con el nivel correspondiente
-        nivel_msg = f"({st.session_state.nivel_seleccionado})" if st.session_state.nivel_seleccionado != 'Ambos' else ""
-        st.markdown(f"<div style='background-color:{'#e8f5e9' if color_msg=='green' else '#fff3e0' if color_msg=='orange' else '#ffebee'}; padding:15px; border-radius:10px; border-left: 5px solid {color_msg}; margin-bottom: 20px;'><h3 style='margin:0; color:{color_msg}'>{mensaje} {nivel_msg}</h3></div>", unsafe_allow_html=True)
-
-        # GRÁFICO
         c1, c2 = st.columns([1, 2])
         with c1:
-            fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, title={'text':f"Avance {nivel_msg}"}, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
             fig.update_layout(height=250, margin=dict(t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.info(f"Completado: **{ok}** de **{total}** cursos {nivel_msg.lower()}.")
-            # Mostrar tabla filtrada según la selección para mayor claridad
-            columnas_mostrar = ['SECTOR','CARGO','CURSO','NIVEL','ESTADO_NUM']
-            st.dataframe(df_view_calc[columnas_mostrar], use_container_width=True, hide_index=True)
-    else:
-        st.warning("No hay datos.")
+            st.info(f"Mostrando **{ok}** de **{total}** cursos.")
+            st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PESTAÑA 2: PLANIFICADOR (DÍAS HÁBILES)
+# PESTAÑA 2: PLANIFICADOR & GANTT
 # ---------------------------------------------------------
 with tab2:
-    # --- FECHA LÍMITE: 20 DE MARZO DE 2026 ---
     fecha_fin = datetime(2026, 3, 20)
-    st.markdown("### 📅 Planificación al 20 de Marzo 2026")
-    
-    # 1. Configuración de Fechas
     fecha_hoy = datetime.now()
     
-    # CÁLCULO DE DÍAS HÁBILES (Lunes a Viernes)
+    # Cálculo días hábiles
     dias_habiles = 0
     temp_date = fecha_hoy
     while temp_date <= fecha_fin:
-        # weekday(): 0=Lunes, 4=Viernes, 5=Sábado, 6=Domingo
-        if temp_date.weekday() < 5: 
-            dias_habiles += 1
+        if temp_date.weekday() < 5: dias_habiles += 1
         temp_date += timedelta(days=1)
     
-    # Semanas "laborales" aproximadas (para agrupar visualmente)
-    semanas_restantes = math.ceil(dias_habiles / 5) 
+    semanas_restantes = max(1, math.ceil(dias_habiles / 5))
 
-    if dias_habiles < 0:
-        st.error("🚨 ¡La fecha límite ha pasado!")
+    st.subheader(f"📅 Planificación al 20/03/2026 ({dias_habiles} días hábiles restantes)")
+    
+    df_pendientes = df_main[df_main['ESTADO_NUM'] == 0]
+    if st.session_state.nivel_seleccionado != 'Ambos':
+        df_pendientes = df_pendientes[df_pendientes['NIVEL'] == st.session_state.nivel_seleccionado]
+    
+    if st.session_state.colaborador_activo != 'Todos':
+        df_plan = df_pendientes[df_pendientes['COLABORADOR'] == st.session_state.colaborador_activo]
     else:
-        st.success(f"🗓️ Quedan **{dias_habiles} días hábiles** (aprox. {semanas_restantes} semanas de trabajo) hasta el cierre del 20/03.")
+        df_plan = df_pendientes
 
-    st.divider()
+    if not df_plan.empty:
+        ritmo = math.ceil(len(df_plan) / semanas_restantes)
+        st.metric("Meta Semanal Requerida", f"{ritmo} cursos/semana")
 
-    if not df_main.empty:
-        # Filtrar solo pendientes
-        df_pendientes = df_main[df_main['ESTADO_NUM'] == 0].copy()
+        # --- GRÁFICO DE GANTT ---
+        st.markdown("### 📊 Cronograma Visual de Capacitación")
+        df_gantt = []
+        cursos_list = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
         
-        # --- NUEVO: Aplicar el filtro de nivel seleccionado también al planificador ---
-        if st.session_state.nivel_seleccionado == 'Nivel 1':
-            df_pendientes = df_pendientes[df_pendientes['NIVEL'] == 'NIVEL 1']
-        elif st.session_state.nivel_seleccionado == 'Nivel 2':
-            df_pendientes = df_pendientes[df_pendientes['NIVEL'] == 'NIVEL 2']
-        # Si es 'Ambos', no filtramos más
-        nivel_plan_msg = f"({st.session_state.nivel_seleccionado})" if st.session_state.nivel_seleccionado != 'Ambos' else ""
-        # ---------------------------------------------------------------------------
-        
-        if st.session_state.colaborador_activo != 'Todos':
-            df_plan = df_pendientes[df_pendientes['COLABORADOR'] == st.session_state.colaborador_activo]
-            titulo_plan = f"Plan para: {st.session_state.colaborador_activo}"
-        else:
-            df_plan = df_pendientes
-            titulo_plan = f"Plan Global: {st.session_state.sector_activo} > {sel_rol}"
+        for i, curso in enumerate(cursos_list):
+            num_sem = (i // ritmo)
+            inicio = fecha_hoy + timedelta(weeks=num_sem)
+            fin = inicio + timedelta(days=4)
+            df_gantt.append(dict(Task=curso[0], Start=inicio.strftime('%Y-%m-%d'), Finish=fin.strftime('%Y-%m-%d'), Resource=curso[2], Description=curso[1]))
 
-        total_pendientes_plan = len(df_plan)
+        if df_gantt:
+            fig_gantt = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
+            fig_gantt.update_layout(height=400)
+            st.plotly_chart(fig_gantt, use_container_width=True)
 
-        if total_pendientes_plan == 0:
-            st.balloons()
-            st.success(f"✅ ¡{titulo_plan} no tiene nada pendiente {nivel_plan_msg.lower()}! Objetivo Cumplido.")
-        elif semanas_restantes > 0:
-            # Cálculo de ritmo
-            ritmo_semanal = math.ceil(total_pendientes_plan / semanas_restantes)
-            
-            c_info, c_metric = st.columns([3, 1])
-            with c_info:
-                st.markdown(f"#### 🎯 {titulo_plan} {nivel_plan_msg}")
-                st.write(f"Cursos pendientes: **{total_pendientes_plan}**")
-                st.info(f"💡 Nuevo Objetivo: Completar **{ritmo_semanal} cursos por semana**.")
-            
-            with c_metric:
-                st.metric("Meta Semanal", f"{ritmo_semanal}", "Cursos")
-
-            # --- GENERADOR DE AGENDA ---
-            st.subheader("📆 Cronograma Sugerido")
-            
-            cursos_pendientes = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
-            semanas_dict = {i: [] for i in range(1, semanas_restantes + 1)}
-            
-            for i, curso in enumerate(cursos_pendientes):
-                num_semana = (i % semanas_restantes) + 1
-                semanas_dict[num_semana].append(curso)
-
-            # Mostrar agenda visual
-            for i in range(1, semanas_restantes + 1):
-                tareas_semana = semanas_dict[i]
-                titulo_expander = f"📌 Semana {i} (Meta: {len(tareas_semana)} cursos)"
-                
-                if tareas_semana:
-                    with st.expander(titulo_expander, expanded=(i==1)):
-                        df_sem = pd.DataFrame(tareas_semana, columns=['Colaborador', 'Curso', 'Nivel'])
-                        st.table(df_sem)
-                else:
-                    st.caption(f"🏁 Semana {i}: Libre (Plan cumplido)")
-
-        else:
-            st.error(f"⏳ ¡Cuidado! Queda muy poco tiempo para la cantidad de cursos pendientes {nivel_plan_msg.lower()}.")
+        # --- AGENDA DETALLADA ---
+        st.markdown("### 📆 Detalle por Semanas")
+        for s in range(semanas_restantes):
+            tareas = cursos_list[s*ritmo : (s+1)*ritmo]
+            if tareas:
+                with st.expander(f"Semana {s+1}"):
+                    st.table(pd.DataFrame(tareas, columns=['Colaborador', 'Curso', 'Nivel']))
+    else:
+        st.success("🎉 ¡No hay cursos pendientes para esta selección!")
