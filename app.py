@@ -76,10 +76,12 @@ def load_data():
 
 df = load_data()
 
-# --- VARIABLES ---
+# --- VARIABLES DE ESTADO ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
+# NUEVO: Estado para controlar el nivel seleccionado ("Ambos", "Nivel 1", "Nivel 2")
+if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
 # --- BARRA LATERAL ---
 if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
@@ -156,11 +158,44 @@ with tab1:
                 st.rerun()
         
         st.divider()
+
+        # =========================================================
+        # 🆕 MODIFICACIÓN: SELECCIÓN DE NIVEL
+        # =========================================================
+        st.markdown("### ⚖️ Ver Indicador por Nivel")
+        col_n1, col_n2, col_ambos = st.columns(3)
+        
+        with col_n1:
+            if st.button("Nivel 1", type=("primary" if st.session_state.nivel_seleccionado == 'Nivel 1' else "secondary")):
+                st.session_state.nivel_seleccionado = 'Nivel 1'
+                st.rerun()
+        with col_n2:
+            if st.button("Nivel 2", type=("primary" if st.session_state.nivel_seleccionado == 'Nivel 2' else "secondary")):
+                st.session_state.nivel_seleccionado = 'Nivel 2'
+                st.rerun()
+        with col_ambos:
+            if st.button("Ambos Niveles", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
+                st.session_state.nivel_seleccionado = 'Ambos'
+                st.rerun()
+        
+        st.markdown(f"**Visualizando:** {st.session_state.nivel_seleccionado}")
+        st.divider()
+        # =========================================================
         
         # CÁLCULOS
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        total = len(df_view)
-        ok = len(df_view[df_view['ESTADO_NUM']==1])
+        
+        # --- NUEVO: Filtrar df_view por Nivel seleccionado antes del cálculo ---
+        if st.session_state.nivel_seleccionado == 'Nivel 1':
+            df_view_calc = df_view[df_view['NIVEL'] == 'NIVEL 1']
+        elif st.session_state.nivel_seleccionado == 'Nivel 2':
+            df_view_calc = df_view[df_view['NIVEL'] == 'NIVEL 2']
+        else: # 'Ambos'
+            df_view_calc = df_view
+        # -------------------------------------------------------------------------
+
+        total = len(df_view_calc)
+        ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1])
         porc = (ok/total*100) if total > 0 else 0
         
         # EMOCIONES
@@ -178,17 +213,21 @@ with tab1:
             mensaje = "⚠️ Nivel Crítico: Se requiere plan de acción inmediato."
             color_msg = "red"
 
-        st.markdown(f"<div style='background-color:{'#e8f5e9' if color_msg=='green' else '#fff3e0' if color_msg=='orange' else '#ffebee'}; padding:15px; border-radius:10px; border-left: 5px solid {color_msg}; margin-bottom: 20px;'><h3 style='margin:0; color:{color_msg}'>{mensaje}</h3></div>", unsafe_allow_html=True)
+        # Mostrar el mensaje con el nivel correspondiente
+        nivel_msg = f"({st.session_state.nivel_seleccionado})" if st.session_state.nivel_seleccionado != 'Ambos' else ""
+        st.markdown(f"<div style='background-color:{'#e8f5e9' if color_msg=='green' else '#fff3e0' if color_msg=='orange' else '#ffebee'}; padding:15px; border-radius:10px; border-left: 5px solid {color_msg}; margin-bottom: 20px;'><h3 style='margin:0; color:{color_msg}'>{mensaje} {nivel_msg}</h3></div>", unsafe_allow_html=True)
 
         # GRÁFICO
         c1, c2 = st.columns([1, 2])
         with c1:
-            fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, title={'text':"Avance"}, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, title={'text':f"Avance {nivel_msg}"}, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
             fig.update_layout(height=250, margin=dict(t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.info(f"Completado: **{ok}** de **{total}** cursos.")
-            st.dataframe(df_view[['SECTOR','CARGO','CURSO','ESTADO_NUM']], use_container_width=True, hide_index=True)
+            st.info(f"Completado: **{ok}** de **{total}** cursos {nivel_msg.lower()}.")
+            # Mostrar tabla filtrada según la selección para mayor claridad
+            columnas_mostrar = ['SECTOR','CARGO','CURSO','NIVEL','ESTADO_NUM']
+            st.dataframe(df_view_calc[columnas_mostrar], use_container_width=True, hide_index=True)
     else:
         st.warning("No hay datos.")
 
@@ -226,6 +265,15 @@ with tab2:
         # Filtrar solo pendientes
         df_pendientes = df_main[df_main['ESTADO_NUM'] == 0].copy()
         
+        # --- NUEVO: Aplicar el filtro de nivel seleccionado también al planificador ---
+        if st.session_state.nivel_seleccionado == 'Nivel 1':
+            df_pendientes = df_pendientes[df_pendientes['NIVEL'] == 'NIVEL 1']
+        elif st.session_state.nivel_seleccionado == 'Nivel 2':
+            df_pendientes = df_pendientes[df_pendientes['NIVEL'] == 'NIVEL 2']
+        # Si es 'Ambos', no filtramos más
+        nivel_plan_msg = f"({st.session_state.nivel_seleccionado})" if st.session_state.nivel_seleccionado != 'Ambos' else ""
+        # ---------------------------------------------------------------------------
+        
         if st.session_state.colaborador_activo != 'Todos':
             df_plan = df_pendientes[df_pendientes['COLABORADOR'] == st.session_state.colaborador_activo]
             titulo_plan = f"Plan para: {st.session_state.colaborador_activo}"
@@ -237,14 +285,14 @@ with tab2:
 
         if total_pendientes_plan == 0:
             st.balloons()
-            st.success(f"✅ ¡{titulo_plan} no tiene nada pendiente! Objetivo Cumplido.")
+            st.success(f"✅ ¡{titulo_plan} no tiene nada pendiente {nivel_plan_msg.lower()}! Objetivo Cumplido.")
         elif semanas_restantes > 0:
             # Cálculo de ritmo
             ritmo_semanal = math.ceil(total_pendientes_plan / semanas_restantes)
             
             c_info, c_metric = st.columns([3, 1])
             with c_info:
-                st.markdown(f"#### 🎯 {titulo_plan}")
+                st.markdown(f"#### 🎯 {titulo_plan} {nivel_plan_msg}")
                 st.write(f"Cursos pendientes: **{total_pendientes_plan}**")
                 st.info(f"💡 Nuevo Objetivo: Completar **{ritmo_semanal} cursos por semana**.")
             
@@ -263,9 +311,6 @@ with tab2:
 
             # Mostrar agenda visual
             for i in range(1, semanas_restantes + 1):
-                # Calculamos las fechas de inicio y fin de esa semana "laboral"
-                inicio_sem = fecha_hoy + timedelta(weeks=i-1)
-                
                 tareas_semana = semanas_dict[i]
                 titulo_expander = f"📌 Semana {i} (Meta: {len(tareas_semana)} cursos)"
                 
@@ -277,4 +322,4 @@ with tab2:
                     st.caption(f"🏁 Semana {i}: Libre (Plan cumplido)")
 
         else:
-            st.error("⏳ ¡Cuidado! Queda muy poco tiempo para la cantidad de cursos pendientes.")
+            st.error(f"⏳ ¡Cuidado! Queda muy poco tiempo para la cantidad de cursos pendientes {nivel_plan_msg.lower()}.")
