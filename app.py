@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
-from streamlit_calendar import calendar # Nueva librería para la Tab 3
+from streamlit_calendar import calendar
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
@@ -76,9 +76,10 @@ def load_planificacion():
     try:
         df_p = pd.read_csv(URL_PLANIF)
         df_p.columns = df_p.columns.str.strip().str.upper()
-        # Convertimos la columna FECHA a formato entendible por Python
         if 'FECHA' in df_p.columns:
             df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
+        # LIMPIEZA CRÍTICA: Reemplazar valores vacíos para evitar error JSON
+        df_p = df_p.fillna("")
         return df_p
     except Exception: return pd.DataFrame()
 
@@ -153,16 +154,12 @@ with tab1:
             df_indiv = df_main[df_main['COLABORADOR'] == nom]
             if st.session_state.nivel_seleccionado != 'Ambos':
                 df_indiv = df_indiv[df_indiv['NIVEL'] == st.session_state.nivel_seleccionado]
-            
             t_ind = len(df_indiv); ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1])
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
-            
             if p_ind == 100: emoji, logro = "🟢", "🏆🎈"
             elif p_ind < 50: emoji, logro = "🔴", ""
             else: emoji, logro = "🟠", ""
-            
-            tipo_btn = "primary" if st.session_state.colaborador_activo == nom else "secondary"
-            if cols[(i+1)%4].button(f"{emoji} {nom} {logro} ({p_ind:.0f}%)", key=f"btn_{i}", type=tipo_btn):
+            if cols[(i+1)%4].button(f"{emoji} {nom} {logro} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom; st.rerun()
         
         st.divider()
@@ -172,7 +169,6 @@ with tab1:
         color_msg = "green" if porc == 100 else "orange" if porc >= 50 else "red"
         if porc == 100 and st.session_state.colaborador_activo != 'Todos': st.balloons()
         st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {color_msg};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}%</h4></div>", unsafe_allow_html=True)
-
         c1, c2 = st.columns([1, 2])
         with c1:
             fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, gauge={'axis':{'range':[None,100]}, 'bar':{'color': color_msg}}))
@@ -192,7 +188,6 @@ with tab2:
     df_pend = df_main[df_main['ESTADO_NUM'] == 0]
     if st.session_state.nivel_seleccionado != 'Ambos': df_pend = df_pend[df_pend['NIVEL'] == st.session_state.nivel_seleccionado]
     df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
-
     if not df_plan.empty:
         ritmo = math.ceil(len(df_plan) / semanas_r); st.metric("Meta Semanal", f"{ritmo} cursos/semana")
         df_gantt = []
@@ -203,43 +198,47 @@ with tab2:
         if df_gantt:
             fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
             st.plotly_chart(fig_g, use_container_width=True)
-    else:
-        st.success("🎉 ¡Objetivo cumplido! Sin tareas pendientes.")
+    else: st.success("🎉 ¡Objetivo cumplido! Sin tareas pendientes.")
 
-# --- TAB 3: CALENDARIO INTERACTIVO (Agenda) ---
+# --- TAB 3: CALENDARIO ---
 with tab3:
     st.header("🗓️ Calendario de Agenda de Cursos")
     if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
         calendar_events = []
+        # Solo procesar filas que tengan una fecha válida (no NaT)
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT'])
         
         for _, row in df_cal.iterrows():
-            # Color: Verde si es Presencial, Azul si es Virtual
-            color = "#28a745" if "PRESENCIAL" in str(row.get('MODALIDAD', '')).upper() else "#3788d8"
+            # Modalidad para el color
+            tipo = str(row.get('CURSO', '')).upper()
+            color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+            
+            # Limpiamos textos para el JSON
+            nombre_col = str(row.get('COLABORADOR', 'S/N'))
+            nombre_cur = str(row.get('NOMBRE DEL CURSO', 'Curso'))[:25]
             
             calendar_events.append({
-                "title": f"👤 {row.get('COLABORADOR', 'S/N')} | 📚 {row.get('NOMBRE DEL CURSO', 'Curso')[:20]}",
+                "title": f"{nombre_col} | {nombre_cur}",
                 "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
                 "end": row['FECHA_DT'].strftime('%Y-%m-%d'),
                 "backgroundColor": color,
                 "borderColor": color,
                 "extendedProps": {
-                    "horario": row.get('HORARIO', 'N/A'),
-                    "link": row.get('LINK', 'Sin link'),
-                    "obs": row.get('OBS:', '')
+                    "horario": str(row.get('HORARIO', '')),
+                    "link": str(row.get('LINK', '')),
+                    "obs": str(row.get('OBS:', ''))
                 }
             })
 
         calendar_options = {
-            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listWeek"},
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
             "locale": "es",
         }
 
-        # Mostrar el componente de Calendario
+        # Renderizado
         state = calendar(events=calendar_events, options=calendar_options, key="cal_agenda_final")
 
-        # Mostrar detalles en la barra lateral al tocar un evento
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             st.sidebar.markdown("---")
@@ -251,4 +250,4 @@ with tab3:
 
         st.markdown("🟢 **Presencial** | 🔵 **Virtual** (Haz clic en un evento para ver detalles en la barra lateral)")
     else:
-        st.error("No se detectaron datos de fechas válidos en la hoja de Planificación.")
+        st.error("No se detectaron fechas válidas en la hoja.")
