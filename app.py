@@ -207,21 +207,46 @@ with tab2:
 
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
-    nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist()) if not df_planif_raw.empty else ["Todos"]
-    busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
     
-    if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
-        calendar_events = []
-        df_cal = df_planif_raw.dropna(subset=['FECHA_DT'])
-        if busqueda != "Todos": df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+    # 1. Verificación de datos (DEBUG)
+    if df_planif_raw.empty:
+        st.warning("⚠️ No se detectaron datos en la hoja de Planificación. Verifica el GID.")
+    else:
+        # 2. Buscador
+        nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
+        busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
 
-        for _, row in df_cal.iterrows():
-            tipo = str(row.get('CURSO', '')).upper()
-            color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
-            calendar_events.append({
-                "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
-                "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
-                "backgroundColor": color,
-                "extendedProps": {"horario": str(row.get('HORARIO', '')), "link": str(row.get('LINK', ''))}
-            })
-        state = calendar(events=calendar_events, options={"locale": "es"}, key="cal_final")
+        calendar_events = []
+        # Feriados de Argentina 2026 (Opcional, ayuda a ver si el calendario carga)
+        feriados = ['2026-01-01', '2026-03-24', '2026-04-02']
+        for f in feriados:
+            calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "display": "background", "backgroundColor": "#ffcccc"})
+
+        # 3. Filtrado y carga de eventos
+        df_cal = df_planif_raw.copy()
+        if 'FECHA_DT' in df_cal.columns:
+            df_cal = df_cal.dropna(subset=['FECHA_DT'])
+            if busqueda != "Todos":
+                df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+
+            for _, row in df_cal.iterrows():
+                tipo = str(row.get('CURSO', '')).upper()
+                color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+                calendar_events.append({
+                    "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                    "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                    "backgroundColor": color,
+                    "borderColor": color
+                })
+
+        # 4. Renderizado del Calendario con Nueva Key
+        options = {
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
+            "initialView": "dayGridMonth",
+            "locale": "es",
+        }
+        
+        # CAMBIO CLAVE: Nueva key para forzar actualización
+        state = calendar(events=calendar_events, options=options, key="calendario_v3_refresh")
+        
+        st.write(f"✅ Eventos cargados: {len(calendar_events)}")
