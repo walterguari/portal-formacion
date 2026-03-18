@@ -208,21 +208,18 @@ with tab2:
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
     
-    # 1. Verificación de datos (DEBUG)
     if df_planif_raw.empty:
         st.warning("⚠️ No se detectaron datos en la hoja de Planificación. Verifica el GID.")
     else:
-        # 2. Buscador
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
 
         calendar_events = []
-        # Feriados de Argentina 2026 (Opcional, ayuda a ver si el calendario carga)
+        # Feriados
         feriados = ['2026-01-01', '2026-03-24', '2026-04-02']
         for f in feriados:
             calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "display": "background", "backgroundColor": "#ffcccc"})
 
-        # 3. Filtrado y carga de eventos
         df_cal = df_planif_raw.copy()
         if 'FECHA_DT' in df_cal.columns:
             df_cal = df_cal.dropna(subset=['FECHA_DT'])
@@ -236,17 +233,30 @@ with tab3:
                     "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
                     "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
                     "backgroundColor": color,
-                    "borderColor": color
+                    "borderColor": color,
+                    "extendedProps": {
+                        "horario": str(row.get('HORARIO', 'No definido')),
+                        "link": str(row.get('LINK', '')),
+                        "curso": str(row.get('NOMBRE DEL CURSO', ''))
+                    }
                 })
 
-        # 4. Renderizado del Calendario con Nueva Key
         options = {
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
             "locale": "es",
+            "selectable": True,
         }
         
-        # CAMBIO CLAVE: Nueva key para forzar actualización
-        state = calendar(events=calendar_events, options=options, key="calendario_v3_refresh")
+        state = calendar(events=calendar_events, options=options, key="calendario_produccion_v1")
         
-        st.write(f"✅ Eventos cargados: {len(calendar_events)}")
+        # MOSTRAR DETALLES AL HACER CLIC
+        if state.get("eventClick"):
+            ev = state["eventClick"]["event"]
+            if ev['title'] != "🇦🇷 FERIADO":
+                st.markdown("---")
+                st.info(f"📌 **Detalles del Curso:** {ev['extendedProps']['curso']}")
+                c1, c2 = st.columns(2)
+                c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+                if ev['extendedProps']['link'].startswith("http"):
+                    c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
