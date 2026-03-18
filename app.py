@@ -242,7 +242,7 @@ with tab3:
                     }
                 })
 
-options = {
+        options = {
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
             "locale": "es",
@@ -250,7 +250,6 @@ options = {
             "height": 600,
         }
         
-        state = calendar(events=calendar_events, options=options, key="calendario_fuerza_v5")
         state = calendar(events=calendar_events, options=options, key="calendario_fuerza_v5")
         # MOSTRAR DETALLES AL HACER CLIC
         if state.get("eventClick"):
