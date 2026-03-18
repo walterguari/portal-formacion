@@ -206,9 +206,9 @@ with tab2:
     else: st.success("🎉 ¡Objetivo cumplido!")
 
 with tab3:
-    st.subheader("🗓️ Agenda de Cursos")
+    st.subheader("🗓️ Agenda de Cursos Interactiva")
     
-    # 1. Espacio reservado para los detalles (aparecerá arriba al hacer clic)
+    # 1. Espacio reservado para los detalles
     contenedor_detalles = st.empty()
 
     if df_planif_raw.empty:
@@ -218,7 +218,7 @@ with tab3:
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
 
-        # 3. CREACIÓN DE LA LISTA DE EVENTOS (Esto es lo que faltaba arriba)
+        # 3. Creación de la lista de eventos
         calendar_events = []
         df_cal = df_planif_raw.copy()
         
@@ -238,7 +238,8 @@ with tab3:
                     "extendedProps": {
                         "horario": str(row.get('HORARIO', 'No definido')),
                         "link": str(row.get('LINK', '')),
-                        "curso": str(row.get('NOMBRE DEL CURSO', ''))
+                        "curso": str(row.get('NOMBRE DEL CURSO', '')),
+                        "obs": str(row.get('OBSERVACIONES', 'Sin observaciones')) # <-- AGREGADO
                     }
                 })
 
@@ -251,16 +252,21 @@ with tab3:
             "height": 600,
         }
         
-        state = calendar(events=calendar_events, options=options, key="calendario_v7_final")
+        state = calendar(events=calendar_events, options=options, key="calendario_v8_obs")
         
-        # 5. Mostrar detalles ARRIBA cuando se haga clic
+        # 5. Mostrar detalles ARRIBA con Observaciones
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             with contenedor_detalles.container():
                 st.markdown("---")
                 st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
-                c1, c2 = st.columns([2, 1])
-                c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                if ev['extendedProps']['link'].startswith("http"):
-                    c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+                    st.write(f"📝 **Observaciones:** {ev['extendedProps']['obs']}") # <-- MOSTRAR AQUÍ
+                
+                with col2:
+                    if ev['extendedProps']['link'].startswith("http"):
+                        st.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
                 st.markdown("---")
