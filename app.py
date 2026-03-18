@@ -19,7 +19,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0 0; padding: 10px 20px; }
     .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #4CAF50; }
     
-    /* Ajuste de altura automática para celdas del calendario */
+    /* Estilos para el Calendario */
     .fc .fc-daygrid-day-frame { min-height: 120px !important; }
     .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; font-size: 0.85em !important; }
     .fc-day-sat, .fc-day-sun { background-color: #f2f2f2 !important; }
@@ -84,7 +84,7 @@ def load_planificacion():
         df_p.columns = df_p.columns.str.strip().str.upper()
         if 'FECHA' in df_p.columns:
             df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
-        # Limpieza para evitar errores de JSON
+        # Limpieza vital para el calendario
         df_p = df_p.fillna("")
         return df_p
     except Exception: return pd.DataFrame()
@@ -135,7 +135,7 @@ df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_r
 st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
 tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda de Cursos"])
 
-# --- TAB 1: TABLERO DE CONTROL ---
+# --- TAB 1: TABLERO ---
 with tab1:
     if not df_main.empty:
         st.markdown("### ⚖️ Filtrar Indicador por Nivel")
@@ -162,9 +162,7 @@ with tab1:
                 df_indiv = df_indiv[df_indiv['NIVEL'] == st.session_state.nivel_seleccionado]
             t_ind = len(df_indiv); ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1])
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
-            if p_ind == 100: emoji, logro = "🟢", "🏆🎈"
-            elif p_ind < 50: emoji, logro = "🔴", ""
-            else: emoji, logro = "🟠", ""
+            emoji, logro = ("🟢", "🏆🎈") if p_ind == 100 else ("🔴", "") if p_ind < 50 else ("🟠", "")
             if cols[(i+1)%4].button(f"{emoji} {nom} {logro} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom; st.rerun()
         
@@ -183,7 +181,7 @@ with tab1:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
-# --- TAB 2: PLANIFICADOR & GANTT ---
+# --- TAB 2: PLANIFICADOR ---
 with tab2:
     fecha_fin = datetime(2026, 3, 20); fecha_hoy = datetime.now(); dias_h = 0; temp_d = fecha_hoy
     while temp_d <= fecha_fin:
@@ -204,14 +202,9 @@ with tab2:
         if df_gantt:
             fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
             st.plotly_chart(fig_g, use_container_width=True)
-        for s in range(semanas_r):
-            t_sem = cursos_l[s*ritmo : (s+1)*ritmo]
-            if t_sem:
-                with st.expander(f"Semana {s+1}"):
-                    st.table(pd.DataFrame(t_sem, columns=['Colaborador', 'Curso', 'Nivel']))
     else: st.success("🎉 ¡Objetivo cumplido! Sin tareas pendientes.")
 
-# --- TAB 3: CALENDARIO MEJORADO ---
+# --- TAB 3: CALENDARIO ---
 with tab3:
     st.markdown("### 🗓️ Agenda de Cursos Planificados")
     c_ref1, c_ref2, c_ref3 = st.columns([1, 1, 3])
@@ -221,7 +214,6 @@ with tab3:
     
     if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
         calendar_events = []
-        # Feriados Nacionales Argentina 2026
         feriados_2026 = ['2026-01-01', '2026-02-16', '2026-02-17', '2026-03-24', '2026-04-02', '2026-04-03', '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-08-17', '2026-10-12', '2026-11-23', '2026-12-08', '2026-12-25']
         for f in feriados_2026:
             calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "end": f, "display": "background", "backgroundColor": "#ffcccc"})
@@ -243,6 +235,7 @@ with tab3:
         }
         
         state = calendar(events=calendar_events, options=calendar_options, key="cal_agenda_final")
+        
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             st.sidebar.markdown("---")
@@ -251,4 +244,5 @@ with tab3:
             st.sidebar.write(f"**Horario:** {ev['extendedProps']['horario']}")
             st.sidebar.write(f"**Link:** {ev['extendedProps']['link']}")
             if ev['extendedProps']['obs']: st.sidebar.warning(f"Nota: {ev['extendedProps']['obs']}")
-    else: st.error("No se detectaron datos válidos para el calendario.")
+    else:
+        st.error("Error al cargar datos del calendario. Verifica la hoja 'PLANIFICACIÓN DE LOS CURSOS'.")
