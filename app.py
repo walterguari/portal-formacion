@@ -206,22 +206,43 @@ with tab2:
     else: st.success("🎉 ¡Objetivo cumplido!")
 
 with tab3:
-    st.subheader("🗓️ Agenda de Cursos Interactiva")
+    st.subheader("🗓️ Agenda de Cursos")
     
-    # 1. Creamos un espacio vacío ARRIBA de todo para los detalles
+    # 1. Espacio reservado para los detalles (aparecerá arriba al hacer clic)
     contenedor_detalles = st.empty()
 
     if df_planif_raw.empty:
-        st.warning("⚠️ No se detectaron datos.")
+        st.warning("⚠️ No se detectaron datos en la hoja de Planificación.")
     else:
-        # 2. Selector de colaborador
+        # 2. Buscador
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
-        busqueda = st.selectbox("🔍 Buscar por Colaborador:", nombres_planif)
+        busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
 
-        # ... (Aquí va todo tu código de 'calendar_events' que ya funciona perfecto) ...
-        # Asegurate de mantener toda la lógica de los eventos igual.
+        # 3. CREACIÓN DE LA LISTA DE EVENTOS (Esto es lo que faltaba arriba)
+        calendar_events = []
+        df_cal = df_planif_raw.copy()
+        
+        if 'FECHA_DT' in df_cal.columns:
+            df_cal = df_cal.dropna(subset=['FECHA_DT'])
+            if busqueda != "Todos":
+                df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
 
-        # 3. Renderizado del calendario
+            for _, row in df_cal.iterrows():
+                tipo = str(row.get('CURSO', '')).upper()
+                color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+                calendar_events.append({
+                    "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                    "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                    "backgroundColor": color,
+                    "borderColor": color,
+                    "extendedProps": {
+                        "horario": str(row.get('HORARIO', 'No definido')),
+                        "link": str(row.get('LINK', '')),
+                        "curso": str(row.get('NOMBRE DEL CURSO', ''))
+                    }
+                })
+
+        # 4. Configuración y Dibujo del Calendario
         options = {
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
@@ -230,18 +251,16 @@ with tab3:
             "height": 600,
         }
         
-        state = calendar(events=calendar_events, options=options, key="calendario_final_v6")
+        state = calendar(events=calendar_events, options=options, key="calendario_v7_final")
         
-        # 4. Lógica para MOSTRAR detalles en el espacio que reservamos ARRIBA
+        # 5. Mostrar detalles ARRIBA cuando se haga clic
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
-            if ev['title'] != "🇦🇷 FERIADO":
-                # Usamos el contenedor que creamos al principio
-                with contenedor_detalles.container():
-                    st.markdown("---")
-                    st.success(f"📌 **Curso:** {ev['extendedProps']['curso']}")
-                    c1, c2 = st.columns([2, 1])
-                    c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                    if ev['extendedProps']['link'].startswith("http"):
-                        c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
-                    st.markdown("---")
+            with contenedor_detalles.container():
+                st.markdown("---")
+                st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
+                c1, c2 = st.columns([2, 1])
+                c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+                if ev['extendedProps']['link'].startswith("http"):
+                    c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
+                st.markdown("---")
