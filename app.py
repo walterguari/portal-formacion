@@ -249,9 +249,7 @@ with tab3:
             "selectable": True,
             "height": 600,
         }
-        
         state = calendar(events=calendar_events, options=options, key="calendario_fuerza_v5")
-        
         # MOSTRAR DETALLES AL HACER CLIC
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
