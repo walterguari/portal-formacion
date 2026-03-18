@@ -206,42 +206,22 @@ with tab2:
     else: st.success("🎉 ¡Objetivo cumplido!")
 
 with tab3:
-    st.write("### 🔍 Prueba de datos")
-    st.write(df_planif_raw.head()) # Esto nos mostrará las primeras 5 filas de tu Excel de planificación
     st.subheader("🗓️ Agenda de Cursos Interactiva")
+    
+    # 1. Creamos un espacio vacío ARRIBA de todo para los detalles
+    contenedor_detalles = st.empty()
+
     if df_planif_raw.empty:
-        st.warning("⚠️ No se detectaron datos en la hoja de Planificación. Verifica el GID.")
+        st.warning("⚠️ No se detectaron datos.")
     else:
+        # 2. Selector de colaborador
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
-        busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
+        busqueda = st.selectbox("🔍 Buscar por Colaborador:", nombres_planif)
 
-        calendar_events = []
-        # Feriados
-        feriados = ['2026-01-01', '2026-03-24', '2026-04-02']
-        for f in feriados:
-            calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "display": "background", "backgroundColor": "#ffcccc"})
+        # ... (Aquí va todo tu código de 'calendar_events' que ya funciona perfecto) ...
+        # Asegurate de mantener toda la lógica de los eventos igual.
 
-        df_cal = df_planif_raw.copy()
-        if 'FECHA_DT' in df_cal.columns:
-            df_cal = df_cal.dropna(subset=['FECHA_DT'])
-            if busqueda != "Todos":
-                df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
-
-            for _, row in df_cal.iterrows():
-                tipo = str(row.get('CURSO', '')).upper()
-                color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
-                calendar_events.append({
-                    "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
-                    "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
-                    "backgroundColor": color,
-                    "borderColor": color,
-                    "extendedProps": {
-                        "horario": str(row.get('HORARIO', 'No definido')),
-                        "link": str(row.get('LINK', '')),
-                        "curso": str(row.get('NOMBRE DEL CURSO', ''))
-                    }
-                })
-
+        # 3. Renderizado del calendario
         options = {
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
@@ -250,14 +230,18 @@ with tab3:
             "height": 600,
         }
         
-        state = calendar(events=calendar_events, options=options, key="calendario_fuerza_v5")
-        # MOSTRAR DETALLES AL HACER CLIC
+        state = calendar(events=calendar_events, options=options, key="calendario_final_v6")
+        
+        # 4. Lógica para MOSTRAR detalles en el espacio que reservamos ARRIBA
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             if ev['title'] != "🇦🇷 FERIADO":
-                st.markdown("---")
-                st.info(f"📌 **Detalles del Curso:** {ev['extendedProps']['curso']}")
-                c1, c2 = st.columns(2)
-                c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                if ev['extendedProps']['link'].startswith("http"):
-                    c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
+                # Usamos el contenedor que creamos al principio
+                with contenedor_detalles.container():
+                    st.markdown("---")
+                    st.success(f"📌 **Curso:** {ev['extendedProps']['curso']}")
+                    c1, c2 = st.columns([2, 1])
+                    c1.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+                    if ev['extendedProps']['link'].startswith("http"):
+                        c2.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
+                    st.markdown("---")
