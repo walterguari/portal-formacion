@@ -21,7 +21,7 @@ st.markdown("""
     
     /* Estilos Calendario */
     .fc .fc-daygrid-day-frame { min-height: 120px !important; }
-    .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; font-size: 0.8em !important; cursor: pointer !important; }
+    .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; font-size: 0.8em !important; }
     .fc-day-sat, .fc-day-sun { background-color: #f2f2f2 !important; }
     .fc-day-sat a, .fc-day-sun a { color: red !important; }
 </style>
@@ -82,14 +82,14 @@ def load_planificacion():
 df = load_data_general()
 df_planif_raw = load_planificacion()
 
-# --- ESTADO Y FILTROS SIDEBAR ---
+# --- ESTADO Y FILTROS ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
 if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
+# --- SIDEBAR ---
 if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
-
 if not df.empty and 'SECTOR' in df.columns:
     st.sidebar.title("🏢 Sectores")
     if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
@@ -113,13 +113,12 @@ if sel_rol != st.session_state.ultimo_cargo_sel:
 
 if st.sidebar.button("🔒 Salir"): st.session_state.acceso_concedido = False; st.rerun()
 
-# --- DATOS FILTRADOS ---
+# --- FILTRADO FINAL ---
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
 st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
-tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda Interactiva"])
+tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda de Cursos"])
 
-# --- TAB 1 ---
 with tab1:
     if not df_main.empty:
         st.markdown("### ⚖️ Filtrar Indicador por Nivel")
@@ -133,7 +132,7 @@ with tab1:
         with c_nb:
             if st.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
                 st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
-        
+
         nombres = sorted(df_main['COLABORADOR'].unique())
         cols = st.columns(4)
         if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
@@ -160,7 +159,6 @@ with tab1:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
-# --- TAB 2 ---
 with tab2:
     fecha_fin = datetime(2026, 3, 20); fecha_hoy = datetime.now(); dias_h = 0; temp_d = fecha_hoy
     while temp_d <= fecha_fin:
@@ -182,58 +180,32 @@ with tab2:
             st.plotly_chart(fig_g, use_container_width=True)
     else: st.success("🎉 ¡Objetivo cumplido!")
 
-# --- TAB 3: CALENDARIO INTERACTIVO ---
 with tab3:
-    st.subheader("🗓️ Agenda de Cursos - Buscador y Detalles")
-    
-    # BUSCADOR POR NOMBRE
-    nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist()) if not df_planif_raw.empty else ["Todos"]
-    busqueda = st.selectbox("🔍 Filtrar Agenda por Colaborador:", nombres_planif)
-
+    st.markdown("### 🗓️ Agenda de Cursos Planificados")
     c_ref1, c_ref2, c_ref3 = st.columns([1, 1, 3])
     with c_ref1: st.markdown("🟢 **Presencial**")
     with c_ref2: st.markdown("🔵 **Virtual**")
-    with c_ref3: st.markdown("🔴 **Feriado**")
+    with c_ref3: st.markdown("🔴 **Feriado / Fin de Semana**")
     
     if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
         calendar_events = []
+        # Feriados
         feriados = ['2026-01-01', '2026-02-16', '2026-02-17', '2026-03-24', '2026-04-02', '2026-04-03', '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-08-17', '2026-10-12', '2026-11-23', '2026-12-08', '2026-12-25']
         for f in feriados: calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "end": f, "display": "background", "backgroundColor": "#ffcccc"})
 
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT'])
-        if busqueda != "Todos":
-            df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
-
         for _, row in df_cal.iterrows():
             tipo = str(row.get('CURSO', '')).upper()
             color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
             calendar_events.append({
                 "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
-                "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                "start": row['FECHA_DT'].strftime('%Y-%m-%d'), "end": row['FECHA_DT'].strftime('%Y-%m-%d'),
                 "backgroundColor": color, "borderColor": color,
-                "extendedProps": {
-                    "colaborador": str(row.get('COLABORADOR', '')),
-                    "curso_nombre": str(row.get('NOMBRE DEL CURSO', '')),
-                    "horario": str(row.get('HORARIO', '')),
-                    "link": str(row.get('LINK', '')),
-                    "obs": str(row.get('OBS:', ''))
-                }
+                "extendedProps": {"horario": str(row.get('HORARIO', '')), "link": str(row.get('LINK', '')), "obs": str(row.get('OBS:', ''))}
             })
 
         options = {"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"}, "initialView": "dayGridMonth", "locale": "es", "height": "auto", "expandRows": True, "dayMaxEvents": False}
-        state = calendar(events=calendar_events, options=options, key="portal_cal_final_v3")
-        
+        state = calendar(events=calendar_events, options=options, key="portal_cal_final")
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
-            if ev['title'] != "🇦🇷 FERIADO":
-                st.markdown("---")
-                st.success(f"📌 **Detalles para: {ev['extendedProps']['colaborador']}**")
-                c1, c2, c3 = st.columns(3)
-                with c1: st.write(f"📖 **Curso:** {ev['extendedProps']['curso_nombre']}")
-                with c2: st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                with c3:
-                    url = ev['extendedProps']['link']
-                    if url and url.startswith("http"):
-                        st.link_button("🚀 ENTRAR A LA REUNIÓN", url, use_container_width=True)
-                    else: st.warning("Sin link")
-                if ev['extendedProps']['obs']: st.info(f"📝 **Obs:** {ev['extendedProps']['obs']}")
+            st.sidebar.info(f"📋 **Curso:** {ev['title']}\n\n⌚ **Hora:** {ev['extendedProps']['horario']}\n\n🔗 **Link:** {ev['extendedProps']['link']}\n\n📝 **Nota:** {ev['extendedProps']['obs']}")
