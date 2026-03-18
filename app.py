@@ -206,8 +206,9 @@ with tab2:
     else: st.success("🎉 ¡Objetivo cumplido!")
 
 with tab3:
+    st.write("### 🔍 Prueba de datos")
+    st.write(df_planif_raw.head()) # Esto nos mostrará las primeras 5 filas de tu Excel de planificación
     st.subheader("🗓️ Agenda de Cursos Interactiva")
-    
     if df_planif_raw.empty:
         st.warning("⚠️ No se detectaron datos en la hoja de Planificación. Verifica el GID.")
     else:
