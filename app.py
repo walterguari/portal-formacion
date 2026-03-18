@@ -206,7 +206,7 @@ with tab2:
     else: st.success("🎉 ¡Objetivo cumplido!")
 
 with tab3:
-    st.subheader("🗓️ Agenda de Cursos 2do Trimestre")
+    st.subheader("🗓️ Agenda de Cursos iteractiva")
     
     # 1. Espacio reservado para los detalles
     contenedor_detalles = st.empty()
