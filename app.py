@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
+from streamlit_calendar import calendar
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
@@ -47,7 +48,7 @@ GID_PLANIF = "829571230"
 URL_GENERAL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_GENERAL}"
 URL_PLANIF = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PLANIF}"
 
-@st.cache_data(ttl=60) # Actualiza cada minuto
+@st.cache_data(ttl=60)
 def load_data_general():
     try:
         df = pd.read_csv(URL_GENERAL)
@@ -68,17 +69,18 @@ def load_data_general():
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
         return df
-    except Exception:
-        return pd.DataFrame()
+    except Exception: return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def load_planificacion():
     try:
         df_p = pd.read_csv(URL_PLANIF)
         df_p.columns = df_p.columns.str.strip().str.upper()
+        # Convertir columna FECHA a formato datetime
+        if 'FECHA' in df_p.columns:
+            df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
         return df_p
-    except Exception:
-        return pd.DataFrame()
+    except Exception: return pd.DataFrame()
 
 df = load_data_general()
 df_planif_raw = load_planificacion()
@@ -232,32 +234,60 @@ with tab2:
     else:
         st.success("🎉 ¡Objetivo cumplido! Sin tareas pendientes.")
 
-# --- TAB 3: AGENDA (NUEVA HOJA) ---
+# --- TAB 3: CALENDARIO INTERACTIVO ---
 with tab3:
-    st.header("🗓️ Agenda de Planificación de Cursos")
-    st.markdown("Datos extraídos de la hoja: **PLANIFICACIÓN DE LOS CURSOS**")
+    st.header("🗓️ Calendario de Cursos Planificados")
     
-    if not df_planif_raw.empty:
-        # Buscador y Filtro
-        col_busq, col_exp = st.columns([2, 1])
-        with col_busq:
-            busqueda = st.text_input("🔍 Buscar en agenda (Colaborador, Curso, Sector, etc.):", "")
+    if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
+        # 1. Preparar eventos para el calendario
+        calendar_events = []
+        df_cal = df_planif_raw.dropna(subset=['FECHA_DT'])
         
-        df_agenda = df_planif_raw.copy()
-        
-        # Aplicar búsqueda
-        if busqueda:
-            mask = df_agenda.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)
-            df_agenda = df_agenda[mask]
-        
-        # Mostrar tabla
-        st.dataframe(df_agenda, use_container_width=True, hide_index=True)
-        
-        with col_exp:
-            # Botón para descargar los datos filtrados
-            csv = df_agenda.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Agenda (CSV)", data=csv, file_name="agenda_cursos_2026.csv", mime="text/csv")
+        for _, row in df_cal.iterrows():
+            # Color: Verde si es presencial, Azul si es virtual
+            mod = str(row.get('MODALIDAD', '')).upper()
+            color = "#28a745" if "PRESENCIAL" in mod else "#3788d8"
             
-        st.info("💡 **Tip:** Haz clic en los encabezados de la tabla para ordenar alfabéticamente o por fecha.")
+            calendar_events.append({
+                "title": f"👤 {row.get('COLABORADOR', 'S/N')} | 📚 {row.get('NOMBRE DEL CURSO', 'Curso')[:20]}",
+                "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                "end": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                "backgroundColor": color,
+                "borderColor": color,
+                "extendedProps": {
+                    "horario": row.get('HORARIO', 'No definido'),
+                    "link": row.get('LINK', 'Sin link'),
+                    "obs": row.get('OBS:', 'Sin observaciones')
+                }
+            })
+
+        # 2. Opciones del Calendario
+        calendar_options = {
+            "headerToolbar": {
+                "left": "prev,next today",
+                "center": "title",
+                "right": "dayGridMonth,listMonth",
+            },
+            "initialView": "dayGridMonth",
+            "locale": "es",
+        }
+
+        # 3. Renderizar Calendario
+        state = calendar(events=calendar_events, options=calendar_options, key="portal_calendar")
+
+        # 4. Detalle en Sidebar al hacer clic
+        if state.get("eventClick"):
+            ev = state["eventClick"]["event"]
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("🔍 Detalle del Curso")
+            st.sidebar.write(f"**Curso:** {ev['title']}")
+            st.sidebar.write(f"**Horario:** {ev['extendedProps']['horario']}")
+            st.sidebar.write(f"**Link:** {ev['extendedProps']['link']}")
+            st.sidebar.info(f"Nota: {ev['extendedProps']['obs']}")
+
+        st.markdown("🟢 **Presencial** | 🔵 **Virtual** (Haz clic en un evento para ver detalles en la barra lateral)")
+        
+        with st.expander("Ver lista completa (Formato Tabla)"):
+             st.dataframe(df_planif_raw.drop(columns=['FECHA_DT']), use_container_width=True, hide_index=True)
     else:
-        st.warning("⚠️ No se pudo cargar la hoja de planificación o está vacía.")
+        st.error("⚠️ No se detectaron fechas válidas en la hoja de Planificación.")
