@@ -18,17 +18,14 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0 0; padding: 10px 20px; }
     .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #4CAF50; }
-    
-    /* Estilos Calendario */
     .fc .fc-daygrid-day-frame { min-height: 120px !important; }
     .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; font-size: 0.8em !important; cursor: pointer !important; }
-    .fc-day-sat, .fc-day-sun { background-color: #f2f2f2 !important; }
-    .fc-day-sat a, .fc-day-sun a { color: red !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- LOGIN ---
-if 'acceso_concedido' not in st.session_state: st.session_state.acceso_concedido = False
+if 'acceso_concedido' not in st.session_state: 
+    st.session_state.acceso_concedido = False
 
 def mostrar_login():
     st.markdown("<h2 style='text-align: center;'>🔒 Portal Privado</h2>", unsafe_allow_html=True)
@@ -39,10 +36,12 @@ def mostrar_login():
             if clave == "CENOA2026": 
                 st.session_state.acceso_concedido = True
                 st.rerun()
-            else: st.error("🚫 Clave incorrecta.")
+            else: 
+                st.error("🚫 Clave incorrecta.")
 
 if not st.session_state.acceso_concedido:
-    mostrar_login(); st.stop()
+    mostrar_login()
+    st.stop()
 
 # --- CARGA DE DATOS ---
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
@@ -57,17 +56,32 @@ def load_data_general():
     try:
         df = pd.read_csv(URL_GENERAL)
         df.columns = df.columns.str.strip().str.upper()
-        col_map = {'ROL': 'CARGO', 'NOMBRE': 'COLABORADOR', 'FORMACION': 'CURSO', 'CAPACITA': 'ESTADO_NUM'}
+        # Mapeo flexible de columnas
+        col_map = {}
         for c in df.columns:
             if "SECTOR" in c: col_map[c] = 'SECTOR'
+            elif "ROL" in c or "CARGO" in c: col_map[c] = 'CARGO'
+            elif "NOMBRE" in c or "COLABORADOR" in c: col_map[c] = 'COLABORADOR'
+            elif "FORMACION" in c or "CURSO" in c: col_map[c] = 'CURSO'
+            elif "CAPACITA" in c or "ESTADO" in c: col_map[c] = 'ESTADO_NUM'
+            elif "NIVEL" in c: col_map[c] = 'NIVEL'
+        
         df = df.rename(columns=col_map)
         df = df.loc[:, ~df.columns.duplicated()]
+        
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
+        else:
+            # Si no encuentra la columna, creamos una de emergencia para que no de error
+            df['ESTADO_NUM'] = 0
+
         for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
-            if c in df.columns: df[c] = df[c].astype(str).str.strip().str.upper()
+            if c in df.columns: 
+                df[c] = df[c].astype(str).str.strip().str.upper()
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error en Datos Generales: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def load_planificacion():
@@ -82,6 +96,12 @@ def load_planificacion():
 df = load_data_general()
 df_planif_raw = load_planificacion()
 
+# --- VALIDACIÓN CRÍTICA DE COLUMNAS ---
+if df.empty or 'SECTOR' not in df.columns:
+    st.error("⚠️ La hoja de cálculo no tiene el formato correcto o la columna 'SECTOR' no fue encontrada.")
+    st.write("Columnas detectadas:", list(df.columns))
+    st.stop()
+
 # --- VARIABLES DE ESTADO ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
@@ -89,30 +109,33 @@ if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_ac
 if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
 # --- BARRA LATERAL ---
-if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
+st.sidebar.title("🏢 Sectores")
+if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
+    st.session_state.sector_activo = "Todos"; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
 
-if not df.empty and 'SECTOR' in df.columns:
-    st.sidebar.title("🏢 Sectores")
-    if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
-        st.session_state.sector_activo = "Todos"; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
-    for sec in sorted(df['SECTOR'].unique()):
-        df_s = df[df['SECTOR'] == sec]
-        avance = (len(df_s[df_s['ESTADO_NUM']==1]) / len(df_s) * 100) if len(df_s) > 0 else 0
-        color_sidebar = "#ef5350" if avance < 50 else "#ffa726" if avance < 90 else "#66bb6a"
-        c1, c2 = st.sidebar.columns([1, 4])
-        with c1: st.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
-        with c2:
-            if st.button(f"{sec} ({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
-                st.session_state.sector_activo = sec; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
+for sec in sorted(df['SECTOR'].unique()):
+    df_s = df[df['SECTOR'] == sec]
+    # Cálculo seguro de avance
+    total_sec = len(df_s)
+    realizados = len(df_s[df_s['ESTADO_NUM'] == 1]) if 'ESTADO_NUM' in df_s.columns else 0
+    avance = (realizados / total_sec * 100) if total_sec > 0 else 0
+    
+    color_sidebar = "#ef5350" if avance < 50 else "#ffa726" if avance < 90 else "#66bb6a"
+    c1, c2 = st.sidebar.columns([1, 4])
+    c1.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
+    if c2.button(f"{sec} ({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
+        st.session_state.sector_activo = sec; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
 
 st.sidebar.title("👮 Puestos")
 df_roles = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
 roles = ["Todos"] + sorted(df_roles['CARGO'].unique().tolist()) if 'CARGO' in df_roles.columns else ["Todos"]
-sel_rol = st.sidebar.radio("Selecciona:", roles, index=roles.index(st.session_state.ultimo_cargo_sel) if st.session_state.ultimo_cargo_sel in roles else 0)
+idx_rol = roles.index(st.session_state.ultimo_cargo_sel) if st.session_state.ultimo_cargo_sel in roles else 0
+sel_rol = st.sidebar.radio("Selecciona:", roles, index=idx_rol)
 if sel_rol != st.session_state.ultimo_cargo_sel:
     st.session_state.ultimo_cargo_sel = sel_rol; st.session_state.colaborador_activo = 'Todos'; st.rerun()
 
-if st.sidebar.button("🔒 Salir"): st.session_state.acceso_concedido = False; st.rerun()
+if st.sidebar.button("🔒 Salir"): 
+    st.session_state.acceso_concedido = False; st.rerun()
 
 # --- DATOS FILTRADOS ---
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
@@ -120,40 +143,44 @@ df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_r
 st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
 tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda Interactiva"])
 
-# --- TAB 1: TABLERO ORIGINAL COMPLETO ---
 with tab1:
     if not df_main.empty:
         st.markdown("### ⚖️ Filtrar Indicador por Nivel")
         c_n1, c_n2, c_nb = st.columns(3)
-        with c_n1: 
-            if st.button("NIVEL 1", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 1' else "secondary")):
-                st.session_state.nivel_seleccionado = 'NIVEL 1'; st.rerun()
-        with c_n2:
-            if st.button("NIVEL 2", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 2' else "secondary")):
-                st.session_state.nivel_seleccionado = 'NIVEL 2'; st.rerun()
-        with c_nb:
-            if st.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
-                st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
+        if c_n1.button("NIVEL 1", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 1' else "secondary")):
+            st.session_state.nivel_seleccionado = 'NIVEL 1'; st.rerun()
+        if c_n2.button("NIVEL 2", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 2' else "secondary")):
+            st.session_state.nivel_seleccionado = 'NIVEL 2'; st.rerun()
+        if c_nb.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
+            st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
 
-        st.markdown(f"### 👤 Equipo - Avance en {st.session_state.nivel_seleccionado}")
         nombres = sorted(df_main['COLABORADOR'].unique())
         cols = st.columns(4)
         if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
              st.session_state.colaborador_activo = 'Todos'; st.rerun()
+        
         for i, nom in enumerate(nombres):
             df_indiv = df_main[df_main['COLABORADOR'] == nom]
-            if st.session_state.nivel_seleccionado != 'Ambos': df_indiv = df_indiv[df_indiv['NIVEL'] == st.session_state.nivel_seleccionado]
-            t_ind = len(df_indiv); ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1]); p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
+            if st.session_state.nivel_seleccionado != 'Ambos': 
+                df_indiv = df_indiv[df_indiv.get('NIVEL') == st.session_state.nivel_seleccionado]
+            
+            t_ind = len(df_indiv)
+            ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1]) if 'ESTADO_NUM' in df_indiv.columns else 0
+            p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
             emoji, logro = ("🟢", "🏆🎈") if p_ind == 100 else ("🔴", "") if p_ind < 50 else ("🟠", "")
-            if cols[(i+1)%4].button(f"{emoji} {nom} {logro} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
+            if cols[(i+1)%4].button(f"{emoji} {nom} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom; st.rerun()
         
         st.divider()
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view['NIVEL'] == st.session_state.nivel_seleccionado]
-        total = len(df_view_calc); ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1]); porc = (ok/total*100) if total > 0 else 0
-        if porc == 100 and st.session_state.colaborador_activo != 'Todos': st.balloons()
+        df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view.get('NIVEL') == st.session_state.nivel_seleccionado]
+        
+        total = len(df_view_calc)
+        ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1]) if 'ESTADO_NUM' in df_view_calc.columns else 0
+        porc = (ok/total*100) if total > 0 else 0
+        
         st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}%</h4></div>", unsafe_allow_html=True)
+        
         c1, c2 = st.columns([1, 2])
         with c1:
             fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, gauge={'axis':{'range':[None,100]}, 'bar':{'color': 'green' if porc==100 else 'orange'}}))
@@ -162,50 +189,31 @@ with tab1:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
-# --- TAB 2: PLANIFICADOR ORIGINAL COMPLETO ---
 with tab2:
-    fecha_fin = datetime(2026, 3, 20); fecha_hoy = datetime.now(); dias_h = 0; temp_d = fecha_hoy
-    while temp_d <= fecha_fin:
-        if temp_d.weekday() < 5: dias_h += 1
-        temp_d += timedelta(days=1)
+    fecha_fin = datetime(2026, 3, 20); fecha_hoy = datetime.now()
+    dias_h = sum(1 for i in range((fecha_fin - fecha_hoy).days + 1) if (fecha_hoy + timedelta(i)).weekday() < 5)
     semanas_r = max(1, math.ceil(dias_h / 5))
-    st.subheader(f"📅 Planificación al 20/03/2026")
-    df_pend = df_main[df_main['ESTADO_NUM'] == 0]
-    if st.session_state.nivel_seleccionado != 'Ambos': df_pend = df_pend[df_pend['NIVEL'] == st.session_state.nivel_seleccionado]
+    df_pend = df_main[df_main['ESTADO_NUM'] == 0] if 'ESTADO_NUM' in df_main.columns else df_main
     df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
     if not df_plan.empty:
         ritmo = math.ceil(len(df_plan) / semanas_r); st.metric("Meta Semanal", f"{ritmo} cursos/semana")
         df_gantt = []
-        cursos_l = df_plan[['COLABORADOR', 'CURSO', 'NIVEL']].values.tolist()
-        for i, curso in enumerate(cursos_l):
+        for i, row in enumerate(df_plan.itertuples()):
             n_s = (i // ritmo); ini = fecha_hoy + timedelta(weeks=n_s)
-            df_gantt.append(dict(Task=f"{curso[0][:15]}..", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=curso[2]))
+            df_gantt.append(dict(Task=f"{row.COLABORADOR[:10]}", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=getattr(row, 'NIVEL', 'N/A')))
         if df_gantt:
-            fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
-            st.plotly_chart(fig_g, use_container_width=True)
+            fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True); st.plotly_chart(fig_g, use_container_width=True)
     else: st.success("🎉 ¡Objetivo cumplido!")
 
-# --- TAB 3: CALENDARIO INTERACTIVO CON BUSCADOR ---
 with tab3:
-    st.subheader("🗓️ Agenda de Cursos - Información Detallada")
-    
-    # 1. BUSCADOR POR NOMBRE
+    st.subheader("🗓️ Agenda de Cursos Interactiva")
     nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist()) if not df_planif_raw.empty else ["Todos"]
     busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
-
-    c_ref1, c_ref2, c_ref3 = st.columns([1, 1, 3])
-    with c_ref1: st.markdown("🟢 **Presencial**")
-    with c_ref2: st.markdown("🔵 **Virtual**")
-    with c_ref3: st.markdown("🔴 **Feriado**")
     
     if not df_planif_raw.empty and 'FECHA_DT' in df_planif_raw.columns:
         calendar_events = []
-        feriados = ['2026-01-01', '2026-02-16', '2026-02-17', '2026-03-24', '2026-04-02', '2026-04-03', '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-08-17', '2026-10-12', '2026-11-23', '2026-12-08', '2026-12-25']
-        for f in feriados: calendar_events.append({"title": "🇦🇷 FERIADO", "start": f, "end": f, "display": "background", "backgroundColor": "#ffcccc"})
-
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT'])
-        if busqueda != "Todos":
-            df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+        if busqueda != "Todos": df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
 
         for _, row in df_cal.iterrows():
             tipo = str(row.get('CURSO', '')).upper()
@@ -213,32 +221,7 @@ with tab3:
             calendar_events.append({
                 "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
                 "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
-                "backgroundColor": color, "borderColor": color,
-                "extendedProps": {
-                    "colaborador": str(row.get('COLABORADOR', '')),
-                    "curso_nombre": str(row.get('NOMBRE DEL CURSO', '')),
-                    "horario": str(row.get('HORARIO', '')),
-                    "link": str(row.get('LINK', '')),
-                    "obs": str(row.get('OBS:', ''))
-                }
+                "backgroundColor": color,
+                "extendedProps": {"horario": str(row.get('HORARIO', '')), "link": str(row.get('LINK', ''))}
             })
-
-        options = {"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"}, "initialView": "dayGridMonth", "locale": "es", "height": "auto", "expandRows": True, "dayMaxEvents": False}
-        state = calendar(events=calendar_events, options=options, key="portal_cal_final_v2")
-        
-        # MOSTRAR DETALLES AL TOCAR UN EVENTO
-        if state.get("eventClick"):
-            ev = state["eventClick"]["event"]
-            if ev['title'] != "🇦🇷 FERIADO":
-                st.markdown("---")
-                with st.container():
-                    st.success(f"📌 **Detalles para: {ev['extendedProps']['colaborador']}**")
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.write(f"📖 **Curso:** {ev['extendedProps']['curso_nombre']}")
-                    with c2: st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                    with c3:
-                        url_reunion = ev['extendedProps']['link']
-                        if url_reunion and url_reunion.startswith("http"):
-                            st.link_button("🚀 ENTRAR A LA REUNIÓN", url_reunion, use_container_width=True)
-                        else: st.warning("Sin link disponible")
-                    if ev['extendedProps']['obs']: st.info(f"📝 **Observaciones:** {ev['extendedProps']['obs']}")
+        state = calendar(events=calendar_events, options={"locale": "es"}, key="cal_final")
