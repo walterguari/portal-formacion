@@ -41,13 +41,16 @@ if not st.session_state.acceso_concedido:
 
 # --- CARGA DE DATOS ---
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
-GID = "245378054"
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+GID_GENERAL = "245378054"
+GID_PLANIF = "829571230"
 
-@st.cache_data(ttl=0)
-def load_data():
+URL_GENERAL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_GENERAL}"
+URL_PLANIF = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PLANIF}"
+
+@st.cache_data(ttl=60) # Actualiza cada minuto
+def load_data_general():
     try:
-        df = pd.read_csv(URL)
+        df = pd.read_csv(URL_GENERAL)
         df.columns = df.columns.str.strip().str.upper()
         col_map = {}
         for col in df.columns:
@@ -68,7 +71,17 @@ def load_data():
     except Exception:
         return pd.DataFrame()
 
-df = load_data()
+@st.cache_data(ttl=60)
+def load_planificacion():
+    try:
+        df_p = pd.read_csv(URL_PLANIF)
+        df_p.columns = df_p.columns.str.strip().str.upper()
+        return df_p
+    except Exception:
+        return pd.DataFrame()
+
+df = load_data_general()
+df_planif_raw = load_planificacion()
 
 # --- VARIABLES DE ESTADO ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
@@ -111,11 +124,11 @@ if st.sidebar.button("🔒 Salir"):
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
 st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
-tab1, tab2 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt"])
+tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda de Cursos"])
 
+# --- TAB 1: TABLERO ---
 with tab1:
     if not df_main.empty:
-        # SELECTORES DE NIVEL
         st.markdown("### ⚖️ Filtrar Indicador por Nivel")
         c_n1, c_n2, c_nb = st.columns(3)
         with c_n1:
@@ -128,11 +141,9 @@ with tab1:
             if st.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
                 st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
 
-        # SELECCIÓN DE EQUIPO CON LOGROS (CELEBRACIÓN AL 100%)
         st.markdown(f"### 👤 Equipo - Avance en {st.session_state.nivel_seleccionado}")
         nombres = sorted(df_main['COLABORADOR'].unique())
         cols = st.columns(4)
-        
         if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
              st.session_state.colaborador_activo = 'Todos'; st.rerun()
         
@@ -145,17 +156,11 @@ with tab1:
             ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1])
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
             
-            # Semáforo y Logros
-            if p_ind == 100:
-                emoji, logro = "🟢", "🏆🎈"
-            elif p_ind < 50:
-                emoji, logro = "🔴", ""
-            else:
-                emoji, logro = "🟠", ""
+            if p_ind == 100: emoji, logro = "🟢", "🏆🎈"
+            elif p_ind < 50: emoji, logro = "🔴", ""
+            else: emoji, logro = "🟠", ""
             
             tipo_btn = "primary" if st.session_state.colaborador_activo == nom else "secondary"
-            
-            # Texto del botón con el logro pegado al nombre si llegó al 100%
             texto_final = f"{emoji} {nom} {logro} ({p_ind:.0f}%)"
             
             if cols[(i+1)%4].button(texto_final, key=f"btn_{i}", type=tipo_btn):
@@ -163,22 +168,15 @@ with tab1:
         
         st.divider()
 
-        # CÁLCULO FINAL DEL TABLERO
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        if st.session_state.nivel_seleccionado != 'Ambos':
-            df_view_calc = df_view[df_view['NIVEL'] == st.session_state.nivel_seleccionado]
-        else:
-            df_view_calc = df_view
+        df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view['NIVEL'] == st.session_state.nivel_seleccionado]
 
         total = len(df_view_calc)
         ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1])
         porc = (ok/total*100) if total > 0 else 0
-        
         color_msg = "green" if porc == 100 else "orange" if porc >= 50 else "red"
         
-        # Animación extra si el seleccionado está al 100%
-        if porc == 100 and st.session_state.colaborador_activo != 'Todos':
-            st.balloons()
+        if porc == 100 and st.session_state.colaborador_activo != 'Todos': st.balloons()
 
         st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {color_msg};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}%</h4></div>", unsafe_allow_html=True)
 
@@ -191,8 +189,8 @@ with tab1:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
+# --- TAB 2: PLANIFICADOR ---
 with tab2:
-    # --- PLANIFICADOR ---
     fecha_fin = datetime(2026, 3, 20)
     fecha_hoy = datetime.now()
     dias_h = 0
@@ -225,7 +223,7 @@ with tab2:
         if df_gantt:
             fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True, showgrid_x=True)
             st.plotly_chart(fig_g, use_container_width=True)
-            
+        
         for s in range(semanas_r):
             t_sem = cursos_l[s*ritmo : (s+1)*ritmo]
             if t_sem:
@@ -233,3 +231,33 @@ with tab2:
                     st.table(pd.DataFrame(t_sem, columns=['Colaborador', 'Curso', 'Nivel']))
     else:
         st.success("🎉 ¡Objetivo cumplido! Sin tareas pendientes.")
+
+# --- TAB 3: AGENDA (NUEVA HOJA) ---
+with tab3:
+    st.header("🗓️ Agenda de Planificación de Cursos")
+    st.markdown("Datos extraídos de la hoja: **PLANIFICACIÓN DE LOS CURSOS**")
+    
+    if not df_planif_raw.empty:
+        # Buscador y Filtro
+        col_busq, col_exp = st.columns([2, 1])
+        with col_busq:
+            busqueda = st.text_input("🔍 Buscar en agenda (Colaborador, Curso, Sector, etc.):", "")
+        
+        df_agenda = df_planif_raw.copy()
+        
+        # Aplicar búsqueda
+        if busqueda:
+            mask = df_agenda.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)
+            df_agenda = df_agenda[mask]
+        
+        # Mostrar tabla
+        st.dataframe(df_agenda, use_container_width=True, hide_index=True)
+        
+        with col_exp:
+            # Botón para descargar los datos filtrados
+            csv = df_agenda.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar Agenda (CSV)", data=csv, file_name="agenda_cursos_2026.csv", mime="text/csv")
+            
+        st.info("💡 **Tip:** Haz clic en los encabezados de la tabla para ordenar alfabéticamente o por fecha.")
+    else:
+        st.warning("⚠️ No se pudo cargar la hoja de planificación o está vacía.")
