@@ -56,7 +56,6 @@ def load_data_general():
     try:
         df = pd.read_csv(URL_GENERAL)
         df.columns = df.columns.str.strip().str.upper()
-        # Mapeo flexible de columnas
         col_map = {}
         for c in df.columns:
             if "SECTOR" in c: col_map[c] = 'SECTOR'
@@ -72,7 +71,6 @@ def load_data_general():
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
         else:
-            # Si no encuentra la columna, creamos una de emergencia para que no de error
             df['ESTADO_NUM'] = 0
 
         for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
@@ -91,18 +89,18 @@ def load_planificacion():
         if 'FECHA' in df_p.columns:
             df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
         return df_p.fillna("")
-    except: return pd.DataFrame()
+    except Exception: 
+        return pd.DataFrame()
 
 df = load_data_general()
 df_planif_raw = load_planificacion()
 
-# --- VALIDACIÓN CRÍTICA DE COLUMNAS ---
+# --- VALIDACIÓN CRÍTICA ---
 if df.empty or 'SECTOR' not in df.columns:
-    st.error("⚠️ La hoja de cálculo no tiene el formato correcto o la columna 'SECTOR' no fue encontrada.")
-    st.write("Columnas detectadas:", list(df.columns))
+    st.error("⚠️ Error de formato en la hoja de cálculo.")
     st.stop()
 
-# --- VARIABLES DE ESTADO ---
+# --- ESTADO DE SESIÓN ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
@@ -111,33 +109,38 @@ if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccio
 # --- BARRA LATERAL ---
 st.sidebar.title("🏢 Sectores")
 if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
-    st.session_state.sector_activo = "Todos"; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
+    st.session_state.update({"sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+    st.rerun()
 
 for sec in sorted(df['SECTOR'].unique()):
     df_s = df[df['SECTOR'] == sec]
-    # Cálculo seguro de avance
     total_sec = len(df_s)
-    realizados = len(df_s[df_s['ESTADO_NUM'] == 1]) if 'ESTADO_NUM' in df_s.columns else 0
+    # Cálculo seguro de avance
+    realizados = (df_s['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_s.columns else 0
     avance = (realizados / total_sec * 100) if total_sec > 0 else 0
     
     color_sidebar = "#ef5350" if avance < 50 else "#ffa726" if avance < 90 else "#66bb6a"
     c1, c2 = st.sidebar.columns([1, 4])
     c1.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
     if c2.button(f"{sec} ({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
-        st.session_state.sector_activo = sec; st.session_state.ultimo_cargo_sel = "Todos"; st.session_state.colaborador_activo = "Todos"; st.rerun()
+        st.session_state.update({"sector_activo": sec, "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+        st.rerun()
 
 st.sidebar.title("👮 Puestos")
 df_roles = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
 roles = ["Todos"] + sorted(df_roles['CARGO'].unique().tolist()) if 'CARGO' in df_roles.columns else ["Todos"]
-idx_rol = roles.index(st.session_state.ultimo_cargo_sel) if st.session_state.ultimo_cargo_sel in roles else 0
-sel_rol = st.sidebar.radio("Selecciona:", roles, index=idx_rol)
+
+sel_rol = st.sidebar.selectbox("Seleccionar puesto:", roles, index=roles.index(st.session_state.ultimo_cargo_sel) if st.session_state.ultimo_cargo_sel in roles else 0)
 if sel_rol != st.session_state.ultimo_cargo_sel:
-    st.session_state.ultimo_cargo_sel = sel_rol; st.session_state.colaborador_activo = 'Todos'; st.rerun()
+    st.session_state.ultimo_cargo_sel = sel_rol
+    st.session_state.colaborador_activo = 'Todos'
+    st.rerun()
 
 if st.sidebar.button("🔒 Salir"): 
-    st.session_state.acceso_concedido = False; st.rerun()
+    st.session_state.acceso_concedido = False
+    st.rerun()
 
-# --- DATOS FILTRADOS ---
+# --- LÓGICA DE FILTRADO ---
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
 st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
@@ -145,80 +148,99 @@ tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gant
 
 with tab1:
     if not df_main.empty:
-        st.markdown("### ⚖️ Filtrar Indicador por Nivel")
-        c_n1, c_n2, c_nb = st.columns(3)
-        if c_n1.button("NIVEL 1", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 1' else "secondary")):
-            st.session_state.nivel_seleccionado = 'NIVEL 1'; st.rerun()
-        if c_n2.button("NIVEL 2", type=("primary" if st.session_state.nivel_seleccionado == 'NIVEL 2' else "secondary")):
-            st.session_state.nivel_seleccionado = 'NIVEL 2'; st.rerun()
-        if c_nb.button("AMBOS NIVELES", type=("primary" if st.session_state.nivel_seleccionado == 'Ambos' else "secondary")):
-            st.session_state.nivel_seleccionado = 'Ambos'; st.rerun()
+        # Filtro de Niveles optimizado
+        st.write("### ⚖️ Nivel de Formación")
+        niveles = ["Ambos", "NIVEL 1", "NIVEL 2"]
+        sel_nivel = st.segmented_control("Ver indicadores de:", niveles, default=st.session_state.nivel_seleccionado)
+        if sel_nivel and sel_nivel != st.session_state.nivel_seleccionado:
+            st.session_state.nivel_seleccionado = sel_nivel
+            st.rerun()
 
+        st.divider()
         nombres = sorted(df_main['COLABORADOR'].unique())
         cols = st.columns(4)
-        if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
-             st.session_state.colaborador_activo = 'Todos'; st.rerun()
         
+        # Botón para ver a todos
+        if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
+             st.session_state.colaborador_activo = 'Todos'
+             st.rerun()
+        
+        # Botones individuales
         for i, nom in enumerate(nombres):
             df_indiv = df_main[df_main['COLABORADOR'] == nom]
             if st.session_state.nivel_seleccionado != 'Ambos': 
                 df_indiv = df_indiv[df_indiv.get('NIVEL') == st.session_state.nivel_seleccionado]
             
             t_ind = len(df_indiv)
-            ok_ind = len(df_indiv[df_indiv['ESTADO_NUM'] == 1]) if 'ESTADO_NUM' in df_indiv.columns else 0
+            ok_ind = (df_indiv['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_indiv.columns else 0
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
-            emoji, logro = ("🟢", "🏆🎈") if p_ind == 100 else ("🔴", "") if p_ind < 50 else ("🟠", "")
+            emoji = "🟢" if p_ind == 100 else "🔴" if p_ind < 50 else "🟠"
+            
             if cols[(i+1)%4].button(f"{emoji} {nom} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
-                st.session_state.colaborador_activo = nom; st.rerun()
+                st.session_state.colaborador_activo = nom
+                st.rerun()
         
         st.divider()
+        
+        # Cálculos de vista actual
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
         df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view.get('NIVEL') == st.session_state.nivel_seleccionado]
         
         total = len(df_view_calc)
-        ok = len(df_view_calc[df_view_calc['ESTADO_NUM']==1]) if 'ESTADO_NUM' in df_view_calc.columns else 0
-        porc = (ok/total*100) if total > 0 else 0
+        ok = (df_view_calc['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view_calc.columns else 0
+        porc = (ok / total * 100) if total > 0 else 0
         
-        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}%</h4></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}% ({st.session_state.colaborador_activo})</h4></div>", unsafe_allow_html=True)
         
         c1, c2 = st.columns([1, 2])
         with c1:
             fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, gauge={'axis':{'range':[None,100]}, 'bar':{'color': 'green' if porc==100 else 'orange'}}))
-            fig.update_layout(height=250, margin=dict(t=30, b=20)); st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(height=250, margin=dict(t=30, b=20))
+            st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
 with tab2:
-    fecha_fin = datetime(2026, 3, 20); fecha_hoy = datetime.now()
-    dias_h = sum(1 for i in range((fecha_fin - fecha_hoy).days + 1) if (fecha_hoy + timedelta(i)).weekday() < 5)
-    semanas_r = max(1, math.ceil(dias_h / 5))
-    df_pend = df_main[df_main['ESTADO_NUM'] == 0] if 'ESTADO_NUM' in df_main.columns else df_main
-    df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
-    if not df_plan.empty:
-        ritmo = math.ceil(len(df_plan) / semanas_r); st.metric("Meta Semanal", f"{ritmo} cursos/semana")
-        df_gantt = []
-        for i, row in enumerate(df_plan.itertuples()):
-            n_s = (i // ritmo); ini = fecha_hoy + timedelta(weeks=n_s)
-            df_gantt.append(dict(Task=f"{row.COLABORADOR[:10]}", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=getattr(row, 'NIVEL', 'N/A')))
-        if df_gantt:
-            fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True); st.plotly_chart(fig_g, use_container_width=True)
-    else: st.success("🎉 ¡Objetivo cumplido!")
+    fecha_fin = datetime(2026, 3, 20)
+    fecha_hoy = datetime.now()
+    dias_restantes = (fecha_fin - fecha_hoy).days
+    
+    if dias_restantes > 0:
+        dias_h = sum(1 for i in range(dias_restantes + 1) if (fecha_hoy + timedelta(i)).weekday() < 5)
+        semanas_r = max(1, math.ceil(dias_h / 5))
+        
+        df_pend = df_main[df_main['ESTADO_NUM'] == 0] if 'ESTADO_NUM' in df_main.columns else df_main
+        df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
+        
+        if not df_plan.empty:
+            ritmo = math.ceil(len(df_plan) / semanas_r)
+            st.metric("Meta Semanal", f"{ritmo} cursos/semana", help=f"Para terminar antes del {fecha_fin.strftime('%d/%m/%Y')}")
+            
+            df_gantt = []
+            for i, row in enumerate(df_plan.itertuples()):
+                n_s = (i // ritmo)
+                ini = fecha_hoy + timedelta(weeks=n_s)
+                df_gantt.append(dict(Task=f"{row.COLABORADOR[:10]}", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=getattr(row, 'NIVEL', 'N/A')))
+            
+            if df_gantt:
+                fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True)
+                st.plotly_chart(fig_g, use_container_width=True)
+        else:
+            st.success("🎉 ¡Objetivo cumplido! No hay cursos pendientes para esta selección.")
+    else:
+        st.warning("⚠️ La fecha límite (20 Marzo 2026) ya ha pasado.")
 
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
-    
-    # 1. Espacio reservado para los detalles
     contenedor_detalles = st.empty()
 
     if df_planif_raw.empty:
         st.warning("⚠️ No se detectaron datos en la hoja de Planificación.")
     else:
-        # 2. Buscador
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
-        busqueda = st.selectbox("🔍 Buscar por Colaborador en Agenda:", nombres_planif)
+        busqueda = st.selectbox("🔍 Filtrar agenda por colaborador:", nombres_planif)
 
-        # 3. Creación de la lista de eventos
         calendar_events = []
         df_cal = df_planif_raw.copy()
         
@@ -231,7 +253,7 @@ with tab3:
                 tipo = str(row.get('CURSO', '')).upper()
                 color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
                 calendar_events.append({
-                    "title": f"{str(row.get('COLABORADOR', ''))[:12]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                    "title": f"{str(row.get('COLABORADOR', ''))[:10]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
                     "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
                     "backgroundColor": color,
                     "borderColor": color,
@@ -239,11 +261,10 @@ with tab3:
                         "horario": str(row.get('HORARIO', 'No definido')),
                         "link": str(row.get('LINK', '')),
                         "curso": str(row.get('NOMBRE DEL CURSO', '')),
-                        "obs": str(row.get('OBSERVACIONES', 'Sin observaciones')) # <-- AGREGADO
+                        "obs": str(row.get('OBSERVACIONES', 'Sin observaciones'))
                     }
                 })
 
-        # 4. Configuración y Dibujo del Calendario
         options = {
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
@@ -252,21 +273,19 @@ with tab3:
             "height": 600,
         }
         
-        state = calendar(events=calendar_events, options=options, key="calendario_v8_obs")
+        state = calendar(events=calendar_events, options=options, key=f"calendar_{busqueda}")
         
-        # 5. Mostrar detalles ARRIBA con Observaciones
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             with contenedor_detalles.container():
                 st.markdown("---")
                 st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
-                
                 col1, col2 = st.columns([2, 1])
                 with col1:
                     st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                    st.write(f"📝 **Observaciones:** {ev['extendedProps']['obs']}") # <-- MOSTRAR AQUÍ
-                
+                    st.write(f"📝 **Observaciones:** {ev['extendedProps']['obs']}")
                 with col2:
-                    if ev['extendedProps']['link'].startswith("http"):
-                        st.link_button("🚀 UNIRSE A LA REUNIÓN", ev['extendedProps']['link'], use_container_width=True)
+                    link = ev['extendedProps']['link']
+                    if link and str(link).startswith("http"):
+                        st.link_button("🚀 UNIRSE A LA REUNIÓN", link, use_container_width=True)
                 st.markdown("---")
