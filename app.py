@@ -236,20 +236,23 @@ with tab3:
     contenedor_detalles = st.empty()
 
     if df_planif_raw.empty:
-        st.warning("⚠️ No se detectaron datos en la hoja de Planificación.")
+        st.warning("⚠️ No hay datos para mostrar.")
     else:
         nombres_planif = ["Todos"] + sorted(df_planif_raw['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Filtrar agenda por colaborador:", nombres_planif)
 
-        calendar_events = []
+        # Filtramos primero
         df_cal = df_planif_raw.copy()
+        if busqueda != "Todos":
+            df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
         
-        if 'FECHA_DT' in df_cal.columns:
-            df_cal = df_cal.dropna(subset=['FECHA_DT'])
-            if busqueda != "Todos":
-                df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+        # ELIMINAR FILAS SIN FECHA (Esto es vital)
+        df_cal = df_cal.dropna(subset=['FECHA_DT'])
 
-            for _, row in df_cal.iterrows():
+        calendar_events = []
+        for _, row in df_cal.iterrows():
+            # Validación extra: solo agregar si la fecha es válida
+            if pd.notnull(row['FECHA_DT']):
                 tipo = str(row.get('CURSO', '')).upper()
                 color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
                 calendar_events.append({
@@ -257,6 +260,7 @@ with tab3:
                     "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
                     "backgroundColor": color,
                     "borderColor": color,
+                    "allDay": True, # Asegura que se vea como bloque
                     "extendedProps": {
                         "horario": str(row.get('HORARIO', 'No definido')),
                         "link": str(row.get('LINK', '')),
@@ -269,23 +273,5 @@ with tab3:
             "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
             "initialView": "dayGridMonth",
             "locale": "es",
-            "selectable": True,
             "height": 600,
         }
-        
-        state = calendar(events=calendar_events, options=options, key=f"calendar_{busqueda}")
-        
-        if state.get("eventClick"):
-            ev = state["eventClick"]["event"]
-            with contenedor_detalles.container():
-                st.markdown("---")
-                st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                    st.write(f"📝 **Observaciones:** {ev['extendedProps']['obs']}")
-                with col2:
-                    link = ev['extendedProps']['link']
-                    if link and str(link).startswith("http"):
-                        st.link_button("🚀 UNIRSE A LA REUNIÓN", link, use_container_width=True)
-                st.markdown("---")
