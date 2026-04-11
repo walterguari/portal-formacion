@@ -6,6 +6,14 @@ import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
+import google.generativeai as genai  # <--- NUEVO IMPORT
+
+# --- CONFIGURACIÓN DE IA (SECRETS) ---
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.error("Falta la GEMINI_API_KEY en los Secrets de Streamlit.")
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
@@ -193,6 +201,25 @@ with tab1:
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
+
+        # --- SECCIÓN NUEVA: ANÁLISIS CON GEMINI ---
+        if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
+            with st.expander("🤖 Análisis Inteligente de Formación"):
+                if st.button("Generar Recomendación con IA"):
+                    with st.spinner("Analizando cumplimiento de Autolux..."):
+                        pendientes = df_view_calc[df_view_calc['ESTADO_NUM'] == 0]['CURSO'].tolist()
+                        prompt = f"""
+                        Eres un experto en Capacitación Automotriz de Cenoa/Autolux.
+                        Analiza al colaborador {st.session_state.colaborador_activo}.
+                        Tiene un avance del {porc:.1f}% en el sector {st.session_state.sector_activo}.
+                        Cursos pendientes: {pendientes if pendientes else 'Ninguno, ¡está al 100%!'}
+                        Genera un resumen muy breve (3 líneas) motivador y técnico sobre qué debe priorizar para cumplir los estándares 2026.
+                        """
+                        try:
+                            respuesta = model.generate_content(prompt)
+                            st.write(respuesta.text)
+                        except Exception as e:
+                            st.error("Error al conectar con Gemini.")
 
 with tab2:
     fecha_fin = datetime(2026, 3, 20)
