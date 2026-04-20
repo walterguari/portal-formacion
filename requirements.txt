@@ -4,4 +4,4 @@ plotly
 openpyxl
 streamlit-calendar
 google-generativeai
-pip install fpdf2
+fpdf2
