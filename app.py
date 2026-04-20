@@ -6,7 +6,7 @@ import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
-import google.generativeai as genai
+import google.generativeai as genai  # <--- NUEVO IMPORT
 
 # --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
