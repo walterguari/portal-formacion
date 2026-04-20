@@ -58,6 +58,7 @@ def generar_pdf_binario(colab, avance, analisis, df_plan):
         pdf.cell(40, 7, str(fila.get('HORARIO', '')), 1, ln=True)
         
     return pdf.output()
+    
     # --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -268,6 +269,27 @@ with tab1:
                         try:
                             respuesta = model.generate_content(prompt)
                             st.write(respuesta.text)
+                            # --- GENERACIÓN DEL BOTÓN PDF ---
+                        if st.session_state.colaborador_activo != 'Todos':
+                            # Filtramos los cursos de este colaborador
+                            df_plan_colab = df_planif_raw[df_planif_raw['COLABORADOR'] == st.session_state.colaborador_activo]
+                            
+                            # Llamamos a la función que pegaste arriba
+                            pdf_bytes = generar_pdf_binario(
+                                st.session_state.colaborador_activo,
+                                round(porc, 1),
+                                respuesta.text,
+                                df_plan_colab
+                            )
+                            
+                            st.divider()
+                            st.download_button(
+                                label="📥 Descargar Reporte en PDF",
+                                data=bytes(pdf_bytes),
+                                file_name=f"Plan_Formacion_{st.session_state.colaborador_activo}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
                         except Exception as e:
                             st.error("Error al conectar con Gemini.")
 
