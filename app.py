@@ -7,59 +7,8 @@ from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
 import google.generativeai as genai  # <--- NUEVO IMPORT
-from fpdf import FPDF
-# Esta clase define el diseño del documento (colores, encabezado, pie de página)
-class PDFReport(FPDF):
-    def header(self):
-        # Color azul oscuro para el encabezado
-        self.set_fill_color(0, 51, 102)
-        self.rect(0, 0, 210, 35, 'F')
-        self.set_font("Arial", 'B', 16)
-        self.set_text_color(255, 255, 255)
-        self.cell(0, 15, "REPORTE DE FORMACIÓN PROFESIONAL 2026", ln=True, align='C')
-        self.ln(10)
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("Arial", 'I', 8)
-        self.cell(0, 10, f"Página {self.page_no()}", align='C')
-
-def generar_pdf_binario(colab, avance, analisis, df_plan):
-    pdf = PDFReport()
-    pdf.add_page()
-    pdf.set_text_color(0, 0, 0)
-    
-    # Datos del Colaborador
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, f"Colaborador: {colab}", ln=True)
-    pdf.cell(0, 10, f"Avance Total: {avance}%", ln=True)
-    pdf.ln(5)
-    
-    # Análisis de la IA
-    pdf.set_font("Arial", 'B', 11)
-    pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 10, " Recomendación de la IA:", ln=True, fill=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.multi_cell(0, 7, analisis.encode('latin-1', 'replace').decode('latin-1'))
-    pdf.ln(5)
-    
-    # Tabla de Cursos de la hoja PLANIFICACIÓN
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 10, " Próximas Capacitaciones (Planificación):", ln=True)
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(100, 7, "Curso", 1)
-    pdf.cell(40, 7, "Fecha", 1)
-    pdf.cell(40, 7, "Horario", 1, ln=True)
-    
-    pdf.set_font("Arial", '', 8)
-    for _, fila in df_plan.iterrows():
-        pdf.cell(100, 7, str(fila.get('NOMBRE DEL CURSO', ''))[:50], 1)
-        pdf.cell(40, 7, str(fila.get('FECHA', '')), 1)
-        pdf.cell(40, 7, str(fila.get('HORARIO', '')), 1, ln=True)
-        
-    return pdf.output()
-    
-    # --- CONFIGURACIÓN DE IA (SECRETS) ---
+# --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
@@ -269,27 +218,6 @@ with tab1:
                         try:
                             respuesta = model.generate_content(prompt)
                             st.write(respuesta.text)
-                            # --- GENERACIÓN DEL BOTÓN PDF ---
-                        if st.session_state.colaborador_activo != 'Todos':
-                            # Filtramos los cursos de este colaborador
-                            df_plan_colab = df_planif_raw[df_planif_raw['COLABORADOR'] == st.session_state.colaborador_activo]
-                            
-                            # Llamamos a la función que pegaste arriba
-                            pdf_bytes = generar_pdf_binario(
-                                st.session_state.colaborador_activo,
-                                round(porc, 1),
-                                respuesta.text,
-                                df_plan_colab
-                            )
-                            
-                            st.divider()
-                            st.download_button(
-                                label="📥 Descargar Reporte en PDF",
-                                data=bytes(pdf_bytes),
-                                file_name=f"Plan_Formacion_{st.session_state.colaborador_activo}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
                         except Exception as e:
                             st.error("Error al conectar con Gemini.")
 
