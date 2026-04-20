@@ -6,84 +6,79 @@ import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
-import google.generativeai as genai
+import google.generativeai as genai  # <--- NUEVO IMPORT
 from fpdf import FPDF
-
-# --- CLASE PARA DISEÑO DE REPORTE PDF AUTOCIEL ---
+# Esta clase define el diseño del documento (colores, encabezado, pie de página)
 class PDFReport(FPDF):
     def header(self):
-        # Fondo azul oscuro corporativo
+        # Color azul oscuro para el encabezado
         self.set_fill_color(0, 51, 102)
         self.rect(0, 0, 210, 35, 'F')
         self.set_font("Arial", 'B', 16)
         self.set_text_color(255, 255, 255)
-        self.cell(0, 15, "AUTOCIEL - REPORTE DE FORMACION 2026", ln=True, align='C')
+        self.cell(0, 15, "REPORTE DE FORMACIÓN PROFESIONAL 2026", ln=True, align='C')
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
         self.set_font("Arial", 'I', 8)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f"Pagina {self.page_no()} | Portal Formacion AUTOCIEL", align='C')
+        self.cell(0, 10, f"Página {self.page_no()}", align='C')
 
 def generar_pdf_binario(colab, avance, analisis, df_plan):
     pdf = PDFReport()
     pdf.add_page()
     pdf.set_text_color(0, 0, 0)
     
-    # Seccion: Datos del Colaborador
+    # Datos del Colaborador
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"Colaborador: {colab}", ln=True)
-    pdf.cell(0, 10, f"Nivel de Avance Total: {avance}%", ln=True)
+    pdf.cell(0, 10, f"Avance Total: {avance}%", ln=True)
     pdf.ln(5)
     
-    # Seccion: Analisis IA
+    # Análisis de la IA
     pdf.set_font("Arial", 'B', 11)
     pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 10, " Recomendacion Estrategica (IA Gemini):", ln=True, fill=True)
+    pdf.cell(0, 10, " Recomendación de la IA:", ln=True, fill=True)
     pdf.set_font("Arial", '', 10)
-    # Limpieza de caracteres para FPDF
-    analisis_clean = analisis.encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 7, analisis_clean)
+    pdf.multi_cell(0, 7, analisis.encode('latin-1', 'replace').decode('latin-1'))
     pdf.ln(5)
     
-    # Seccion: Tabla de Planificacion
+    # Tabla de Cursos de la hoja PLANIFICACIÓN
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 10, " Proximas Capacitaciones Programadas:", ln=True)
+    pdf.cell(0, 10, " Próximas Capacitaciones (Planificación):", ln=True)
     pdf.set_font("Arial", 'B', 9)
-    pdf.set_fill_color(200, 200, 200)
-    pdf.cell(100, 7, "Curso", 1, 0, 'C', True)
-    pdf.cell(40, 7, "Fecha", 1, 0, 'C', True)
-    pdf.cell(40, 7, "Horario", 1, 1, 'C', True)
+    pdf.cell(100, 7, "Curso", 1)
+    pdf.cell(40, 7, "Fecha", 1)
+    pdf.cell(40, 7, "Horario", 1, ln=True)
     
     pdf.set_font("Arial", '', 8)
-    if not df_plan.empty:
-        for _, fila in df_plan.iterrows():
-            pdf.cell(100, 7, str(fila.get('NOMBRE DEL CURSO', ''))[:50], 1)
-            pdf.cell(40, 7, str(fila.get('FECHA', '')), 1, 0, 'C')
-            pdf.cell(40, 7, str(fila.get('HORARIO', '')), 1, 1, 'C')
-    else:
-        pdf.cell(180, 7, "No hay cursos programados proximamente.", 1, 1, 'C')
+    for _, fila in df_plan.iterrows():
+        pdf.cell(100, 7, str(fila.get('NOMBRE DEL CURSO', ''))[:50], 1)
+        pdf.cell(40, 7, str(fila.get('FECHA', '')), 1)
+        pdf.cell(40, 7, str(fila.get('HORARIO', '')), 1, ln=True)
         
     return pdf.output()
-
-# --- CONFIGURACIÓN DE IA (SECRETS) ---
+    
+    # --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     st.error("Falta la GEMINI_API_KEY en los Secrets de Streamlit.")
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Portal Formación AUTOCIEL 2026", layout="wide", page_icon="🎓")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
 
 # --- ESTILOS ---
 st.markdown("""
 <style>
     div.stButton > button {width: 100%; border-radius: 8px; font-weight: bold; margin-bottom: 5px; height: 45px;}
+    [data-testid="stSidebar"] img {display: block; margin: 0 auto 20px auto;}
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 4px 4px 0 0; padding: 10px 20px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0 0; padding: 10px 20px; }
     .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #4CAF50; }
+    .fc .fc-daygrid-day-frame { min-height: 120px !important; }
+    .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; font-size: 0.8em !important; cursor: pointer !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,7 +87,7 @@ if 'acceso_concedido' not in st.session_state:
     st.session_state.acceso_concedido = False
 
 def mostrar_login():
-    st.markdown("<h2 style='text-align: center;'>🔒 Portal Privado AUTOCIEL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔒 Portal Privado</h2>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         clave = st.text_input("Contraseña", type="password")
@@ -111,6 +106,7 @@ if not st.session_state.acceso_concedido:
 SHEET_ID = "11yH6PUYMpt-m65hFH9t2tWSEgdRpLOCFR3OFjJtWToQ"
 GID_GENERAL = "245378054"
 GID_PLANIF = "829571230"
+
 URL_GENERAL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_GENERAL}"
 URL_PLANIF = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_PLANIF}"
 
@@ -127,13 +123,22 @@ def load_data_general():
             elif "FORMACION" in c or "CURSO" in c: col_map[c] = 'CURSO'
             elif "CAPACITA" in c or "ESTADO" in c: col_map[c] = 'ESTADO_NUM'
             elif "NIVEL" in c: col_map[c] = 'NIVEL'
+        
         df = df.rename(columns=col_map)
+        df = df.loc[:, ~df.columns.duplicated()]
+        
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
+        else:
+            df['ESTADO_NUM'] = 0
+
         for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
-            if c in df.columns: df[c] = df[c].astype(str).str.strip().str.upper()
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip().str.upper()
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error en Datos Generales: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def load_planificacion():
@@ -143,86 +148,216 @@ def load_planificacion():
         if 'FECHA' in df_p.columns:
             df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
         return df_p.fillna("")
-    except: return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
 
 df = load_data_general()
 df_planif_raw = load_planificacion()
 
+if df.empty or 'SECTOR' not in df.columns:
+    st.error("⚠️ Error de formato en la hoja de cálculo.")
+    st.stop()
+
 # --- ESTADO DE SESIÓN ---
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
+if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
+if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
-# --- SIDEBAR ---
-st.sidebar.title("🏢 AUTOCIEL")
+# --- BARRA LATERAL ---
+st.sidebar.title("🏢 Sectores")
 if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
-    st.session_state.update({"sector_activo": "Todos", "colaborador_activo": "Todos"})
+    st.session_state.update({"sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
     st.rerun()
 
 for sec in sorted(df['SECTOR'].unique()):
-    if st.sidebar.button(sec, key=f"side_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
-        st.session_state.update({"sector_activo": sec, "colaborador_activo": "Todos"})
+    df_s = df[df['SECTOR'] == sec]
+    total_sec = len(df_s)
+    realizados = (df_s['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_s.columns else 0
+    avance = (realizados / total_sec * 100) if total_sec > 0 else 0
+    
+    color_sidebar = "#ef5350" if avance < 50 else "#ffa726" if avance < 90 else "#66bb6a"
+    c1, c2 = st.sidebar.columns([1, 4])
+    c1.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
+    if c2.button(f"{sec} ({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
+        st.session_state.update({"sector_activo": sec, "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
         st.rerun()
 
-# --- TABS ---
-st.title(f"🎓 Gestión AUTOCIEL: {st.session_state.sector_activo}")
-tab1, tab2, tab3 = st.tabs(["📊 Tablero", "📅 Planificador", "🗓️ Agenda"])
+st.sidebar.title("👮 Puestos")
+df_roles = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
+roles = ["Todos"] + sorted(df_roles['CARGO'].unique().tolist()) if 'CARGO' in df_roles.columns else ["Todos"]
+
+sel_rol = st.sidebar.selectbox("Seleccionar puesto:", roles, index=roles.index(st.session_state.ultimo_cargo_sel) if st.session_state.ultimo_cargo_sel in roles else 0)
+if sel_rol != st.session_state.ultimo_cargo_sel:
+    st.session_state.ultimo_cargo_sel = sel_rol
+    st.session_state.colaborador_activo = 'Todos'
+    st.rerun()
+
+if st.sidebar.button("🔒 Salir"):
+    st.session_state.acceso_concedido = False
+    st.rerun()
+
+# --- LÓGICA DE FILTRADO ---
+df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
+
+st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
+tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda Interactiva"])
 
 with tab1:
-    df_main = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
     if not df_main.empty:
-        nombres = sorted(df_main['COLABORADOR'].unique())
-        cols = st.columns(4)
-        for i, nom in enumerate(nombres):
-            if cols[i%4].button(nom, key=f"btn_{nom}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
-                st.session_state.colaborador_activo = nom
-                st.rerun()
+        st.write("### ⚖️ Nivel de Formación")
+        niveles = ["Ambos", "NIVEL 1", "NIVEL 2"]
+        sel_nivel = st.selectbox("Ver indicadores de:", niveles, index=niveles.index(st.session_state.nivel_seleccionado))
+        if sel_nivel != st.session_state.nivel_seleccionado:
+            st.session_state.nivel_seleccionado = sel_nivel
+            st.rerun()
 
         st.divider()
+        nombres = sorted(df_main['COLABORADOR'].unique())
+        cols = st.columns(4)
+        
+        if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
+             st.session_state.colaborador_activo = 'Todos'
+             st.rerun()
+        
+        for i, nom in enumerate(nombres):
+            df_indiv = df_main[df_main['COLABORADOR'] == nom]
+            if st.session_state.nivel_seleccionado != 'Ambos':
+                df_indiv = df_indiv[df_indiv.get('NIVEL') == st.session_state.nivel_seleccionado]
+            
+            t_ind = len(df_indiv)
+            ok_ind = (df_indiv['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_indiv.columns else 0
+            p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
+            emoji = "🟢" if p_ind == 100 else "🔴" if p_ind < 50 else "🟠"
+            
+            if cols[(i+1)%4].button(f"{emoji} {nom} ({p_ind:.0f}%)", key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
+                st.session_state.colaborador_activo = nom
+                st.rerun()
+        
+        st.divider()
         df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        total = len(df_view)
-        ok = (df_view['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view.columns else 0
+        df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view.get('NIVEL') == st.session_state.nivel_seleccionado]
+        
+        total = len(df_view_calc)
+        ok = (df_view_calc['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view_calc.columns else 0
         porc = (ok / total * 100) if total > 0 else 0
         
-        st.metric(f"Avance de {st.session_state.colaborador_activo}", f"{porc:.1f}%")
-        st.dataframe(df_view[['CURSO','ESTADO_NUM']], use_container_width=True, hide_index=True)
+        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}% ({st.session_state.colaborador_activo})</h4></div>", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=porc, gauge={'axis':{'range':[None,100]}, 'bar':{'color': 'green' if porc==100 else 'orange'}}))
+            fig.update_layout(height=250, margin=dict(t=30, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.info(f"Completado: **{ok}** de **{total}** cursos.")
+            st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
+        # --- SECCIÓN NUEVA: ANÁLISIS CON GEMINI ---
         if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
-            with st.expander("🤖 Mentor IA - AUTOCIEL"):
-                if st.button("Generar Recomendación Estratégica"):
-                    with st.spinner("Analizando para AUTOCIEL..."):
-                        pendientes = df_view[df_view['ESTADO_NUM'] == 0]['CURSO'].tolist()
-                        prompt = f"Eres el Director de Capacitación de AUTOCIEL. Analiza a {st.session_state.colaborador_activo} con {porc}% de avance. Pendientes: {pendientes}. Da una recomendación de 3 líneas."
+            with st.expander("🤖 Análisis Inteligente de Formación"):
+                if st.button("Generar Recomendación con IA"):
+                    with st.spinner("Analizando cumplimiento de Autolux..."):
+                        pendientes = df_view_calc[df_view_calc['ESTADO_NUM'] == 0]['CURSO'].tolist()
+                        prompt = f"""
+                        Eres un experto en Capacitación Automotriz de Cenoa/Autolux.
+                        Analiza al colaborador {st.session_state.colaborador_activo}.
+                        Tiene un avance del {porc:.1f}% en el sector {st.session_state.sector_activo}.
+                        Cursos pendientes: {pendientes if pendientes else 'Ninguno, ¡está al 100%!'}
+                        Genera un resumen muy breve (3 líneas) motivador y técnico sobre qué debe priorizar para cumplir los estándares 2026.
+                        """
                         try:
                             respuesta = model.generate_content(prompt)
-                            texto_ia = respuesta.text
-                            st.write(texto_ia)
-                            
+                            st.write(respuesta.text)
+                            # --- GENERACIÓN DEL BOTÓN PDF ---
+                        if st.session_state.colaborador_activo != 'Todos':
+                            # Filtramos los cursos de este colaborador
                             df_plan_colab = df_planif_raw[df_planif_raw['COLABORADOR'] == st.session_state.colaborador_activo]
-                            pdf_bytes = generar_pdf_binario(st.session_state.colaborador_activo, round(porc, 1), texto_ia, df_plan_colab)
+                            
+                            # Llamamos a la función que pegaste arriba
+                            pdf_bytes = generar_pdf_binario(
+                                st.session_state.colaborador_activo,
+                                round(porc, 1),
+                                respuesta.text,
+                                df_plan_colab
+                            )
                             
                             st.divider()
                             st.download_button(
-                                label="📥 DESCARGAR REPORTE AUTOCIEL (PDF)",
+                                label="📥 Descargar Reporte en PDF",
                                 data=bytes(pdf_bytes),
-                                file_name=f"Reporte_AUTOCIEL_{st.session_state.colaborador_activo}.pdf",
+                                file_name=f"Plan_Formacion_{st.session_state.colaborador_activo}.pdf",
                                 mime="application/pdf",
                                 use_container_width=True
                             )
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            st.error("Error al conectar con Gemini.")
 
 with tab2:
-    st.write("Planificación de cumplimiento meta 2026.")
-    # Código de Gantt simplificado
-    df_p = df_main[df_main['ESTADO_NUM'] == 0]
-    if not df_p.empty:
-        df_g = [dict(Task=r.COLABORADOR[:10], Start=datetime.now().strftime('%Y-%m-%d'), Finish=(datetime.now()+timedelta(days=7)).strftime('%Y-%m-%d'), Resource='Pendiente') for r in df_p.head(10).itertuples()]
-        st.plotly_chart(ff.create_gantt(df_g, index_col='Resource', show_colorbar=True), use_container_width=True)
+    fecha_fin = datetime(2026, 3, 20)
+    fecha_hoy = datetime.now()
+    dias_restantes = (fecha_fin - fecha_hoy).days
+    
+    if dias_restantes > 0:
+        dias_h = sum(1 for i in range(dias_restantes + 1) if (fecha_hoy + timedelta(i)).weekday() < 5)
+        semanas_r = max(1, math.ceil(dias_h / 5))
+        df_pend = df_main[df_main['ESTADO_NUM'] == 0] if 'ESTADO_NUM' in df_main.columns else df_main
+        df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
+        
+        if not df_plan.empty:
+            ritmo = math.ceil(len(df_plan) / semanas_r)
+            st.metric("Meta Semanal", f"{ritmo} cursos/semana")
+            df_gantt = []
+            for i, row in enumerate(df_plan.itertuples()):
+                n_s = (i // ritmo)
+                ini = fecha_hoy + timedelta(weeks=n_s)
+                df_gantt.append(dict(Task=f"{row.COLABORADOR[:10]}", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=getattr(row, 'NIVEL', 'N/A')))
+            if df_gantt:
+                fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True)
+                st.plotly_chart(fig_g, use_container_width=True)
+        else:
+            st.success("🎉 ¡Objetivo cumplido!")
+    else:
+        st.warning("⚠️ Fecha límite superada.")
 
 with tab3:
-    if not df_planif_raw.empty:
+    st.subheader("🗓️ Agenda de Cursos Interactiva")
+    contenedor_detalles = st.empty()
+    if df_planif_raw.empty:
+        st.warning("⚠️ No hay datos en Planificación.")
+    elif 'FECHA_DT' not in df_planif_raw.columns:
+        st.error("❌ Revisa la columna FECHA en tu Excel.")
+    else:
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
-        if st.session_state.colaborador_activo != "Todos":
-            df_cal = df_cal[df_cal['COLABORADOR'] == st.session_state.colaborador_activo]
-        eventos = [{"title": str(r.get('NOMBRE DEL CURSO', ''))[:20], "start": r['FECHA_DT'].strftime('%Y-%m-%d'), "backgroundColor": "#3788d8"} for _, r in df_cal.iterrows()]
-        calendar(events=eventos, options={"locale": "es", "height": 600}, key="calendar_autociel")
+        nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
+        busqueda = st.selectbox("🔍 Filtrar por colaborador:", nombres_planif)
+
+        if busqueda != "Todos":
+            df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+
+        calendar_events = []
+        for _, row in df_cal.iterrows():
+            tipo = str(row.get('CURSO', '')).upper()
+            color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+            calendar_events.append({
+                "title": f"{str(row.get('COLABORADOR', ''))[:10]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                "backgroundColor": color,
+                "allDay": True,
+                "extendedProps": {
+                    "horario": str(row.get('HORARIO', 'No definido')),
+                    "link": str(row.get('LINK', '')),
+                    "curso": str(row.get('NOMBRE DEL CURSO', '')),
+                    "obs": str(row.get('OBSERVACIONES', 'Sin observaciones'))
+                }
+            })
+
+        state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key="calendar_v4")
+        
+        if state.get("eventClick"):
+            ev = state["eventClick"]["event"]
+            with contenedor_detalles.container():
+                st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
+                st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+                if ev['extendedProps']['link'].startswith("http"):
+                    st.link_button("🚀 UNIRSE", ev['extendedProps']['link'])
