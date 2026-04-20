@@ -7,8 +7,58 @@ from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
 import google.generativeai as genai  # <--- NUEVO IMPORT
+from fpdf import FPDF
+# Esta clase define el diseño del documento (colores, encabezado, pie de página)
+class PDFReport(FPDF):
+    def header(self):
+        # Color azul oscuro para el encabezado
+        self.set_fill_color(0, 51, 102)
+        self.rect(0, 0, 210, 35, 'F')
+        self.set_font("Arial", 'B', 16)
+        self.set_text_color(255, 255, 255)
+        self.cell(0, 15, "REPORTE DE FORMACIÓN PROFESIONAL 2026", ln=True, align='C')
+        self.ln(10)
 
-# --- CONFIGURACIÓN DE IA (SECRETS) ---
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Arial", 'I', 8)
+        self.cell(0, 10, f"Página {self.page_no()}", align='C')
+
+def generar_pdf_binario(colab, avance, analisis, df_plan):
+    pdf = PDFReport()
+    pdf.add_page()
+    pdf.set_text_color(0, 0, 0)
+    
+    # Datos del Colaborador
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"Colaborador: {colab}", ln=True)
+    pdf.cell(0, 10, f"Avance Total: {avance}%", ln=True)
+    pdf.ln(5)
+    
+    # Análisis de la IA
+    pdf.set_font("Arial", 'B', 11)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 10, " Recomendación de la IA:", ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.multi_cell(0, 7, analisis.encode('latin-1', 'replace').decode('latin-1'))
+    pdf.ln(5)
+    
+    # Tabla de Cursos de la hoja PLANIFICACIÓN
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 10, " Próximas Capacitaciones (Planificación):", ln=True)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(100, 7, "Curso", 1)
+    pdf.cell(40, 7, "Fecha", 1)
+    pdf.cell(40, 7, "Horario", 1, ln=True)
+    
+    pdf.set_font("Arial", '', 8)
+    for _, fila in df_plan.iterrows():
+        pdf.cell(100, 7, str(fila.get('NOMBRE DEL CURSO', ''))[:50], 1)
+        pdf.cell(40, 7, str(fila.get('FECHA', '')), 1)
+        pdf.cell(40, 7, str(fila.get('HORARIO', '')), 1, ln=True)
+        
+    return pdf.output()
+    # --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
