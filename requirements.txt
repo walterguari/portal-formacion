@@ -1,6 +1,6 @@
 streamlit
 pandas
 plotly
-openpyxl
 streamlit-calendar
 google-generativeai
+fpdf2
