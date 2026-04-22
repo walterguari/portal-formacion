@@ -6,7 +6,7 @@ import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
-import google.generativeai as genai  # <--- NUEVO IMPORT
+import google.generativeai as genai
 
 # --- CONFIGURACIÓN DE IA (SECRETS) ---
 if "GEMINI_API_KEY" in st.secrets:
@@ -202,22 +202,24 @@ with tab1:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
             st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
-        # --- SECCIÓN NUEVA: ANÁLISIS CON GEMINI ---
+        # --- SECCIÓN IA OPTIMIZADA ---
         if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
             with st.expander("🤖 Análisis Inteligente de Formación"):
                 if st.button("Generar Recomendación con IA"):
-                    with st.spinner("Analizando cumplimiento de Autolux..."):
+                    with st.spinner("Analizando cumplimiento..."):
                         pendientes = df_view_calc[df_view_calc['ESTADO_NUM'] == 0]['CURSO'].tolist()
+                        status_text = "al 100%" if porc == 100 else f"al {porc:.1f}%"
+                        
                         prompt = f"""
-                        Eres un experto en Capacitación Automotriz de Cenoa/Autolux.
-                        Analiza al colaborador {st.session_state.colaborador_activo}.
-                        Tiene un avance del {porc:.1f}% en el sector {st.session_state.sector_activo}.
-                        Cursos pendientes: {pendientes if pendientes else 'Ninguno, ¡está al 100%!'}
-                        Genera un resumen muy breve (3 líneas) motivador y técnico sobre qué debe priorizar para cumplir los estándares 2026.
+                        Eres un experto en Capacitación Automotriz de Autolux/Cenoa.
+                        Analiza al colaborador {st.session_state.colaborador_activo} ({st.session_state.sector_activo}).
+                        Estado: {status_text}.
+                        Pendientes: {', '.join(pendientes) if pendientes else 'Ninguno'}.
+                        Tarea: Resumen de 3 líneas motivador y técnico sobre prioridades 2026.
                         """
                         try:
                             respuesta = model.generate_content(prompt)
-                            st.write(respuesta.text)
+                            st.info(respuesta.text)
                         except Exception as e:
                             st.error("Error al conectar con Gemini.")
 
@@ -250,12 +252,13 @@ with tab2:
 
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
-    contenedor_detalles = st.empty()
+    
     if df_planif_raw.empty:
         st.warning("⚠️ No hay datos en Planificación.")
     elif 'FECHA_DT' not in df_planif_raw.columns:
         st.error("❌ Revisa la columna FECHA en tu Excel.")
     else:
+        # Limpieza y filtrado
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
         nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Filtrar por colaborador:", nombres_planif)
@@ -263,29 +266,37 @@ with tab3:
         if busqueda != "Todos":
             df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
 
+        # Construcción de eventos con validación
         calendar_events = []
         for _, row in df_cal.iterrows():
-            tipo = str(row.get('CURSO', '')).upper()
-            color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
-            calendar_events.append({
-                "title": f"{str(row.get('COLABORADOR', ''))[:10]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
-                "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
-                "backgroundColor": color,
-                "allDay": True,
-                "extendedProps": {
-                    "horario": str(row.get('HORARIO', 'No definido')),
-                    "link": str(row.get('LINK', '')),
-                    "curso": str(row.get('NOMBRE DEL CURSO', '')),
-                    "obs": str(row.get('OBSERVACIONES', 'Sin observaciones'))
-                }
-            })
+            try:
+                tipo = str(row.get('CURSO', '')).upper()
+                color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+                calendar_events.append({
+                    "title": f"{str(row.get('COLABORADOR', ''))[:10]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                    "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
+                    "backgroundColor": color,
+                    "allDay": True,
+                    "extendedProps": {
+                        "horario": str(row.get('HORARIO', 'No definido')),
+                        "link": str(row.get('LINK', '')),
+                        "curso": str(row.get('NOMBRE DEL CURSO', '')),
+                        "obs": str(row.get('OBSERVACIONES', 'Sin observaciones'))
+                    }
+                })
+            except: continue
 
-        state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key="calendar_v4")
+        # --- KEY DINÁMICA: Soluciona el problema de la agenda en blanco ---
+        cal_key = f"calendar_{st.session_state.sector_activo}_{busqueda}"
         
+        state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key=cal_key)
+        
+        # Detalles del evento al hacer clic
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
-            with contenedor_detalles.container():
-                st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
-                st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
-                if ev['extendedProps']['link'].startswith("http"):
-                    st.link_button("🚀 UNIRSE", ev['extendedProps']['link'])
+            st.markdown("---")
+            st.info(f"📌 **Curso:** {ev['extendedProps']['curso']}")
+            st.write(f"⌚ **Horario:** {ev['extendedProps']['horario']}")
+            st.write(f"📝 **Obs:** {ev['extendedProps']['obs']}")
+            if ev['extendedProps']['link'].startswith("http"):
+                st.link_button("🚀 UNIRSE AHORA", ev['extendedProps']['link'])
