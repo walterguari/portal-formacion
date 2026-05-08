@@ -162,7 +162,15 @@ with tab1:
             st.rerun()
 
         st.divider()
-        nombres = sorted(df_main['COLABORADOR'].unique())
+
+        # --- FILTRO POR NIVEL ANTES DE GENERAR BOTONES ---
+        if st.session_state.nivel_seleccionado != 'Ambos':
+            df_con_nivel = df_main[df_main['NIVEL'] == st.session_state.nivel_seleccionado]
+        else:
+            df_con_nivel = df_main
+
+        # Obtenemos solo los colaboradores que tienen registros en el nivel seleccionado
+        nombres = sorted(df_con_nivel['COLABORADOR'].unique())
         cols = st.columns(4)
         
         if cols[0].button(f"👥 Ver Todo ({len(nombres)})", type=("primary" if st.session_state.colaborador_activo == 'Todos' else "secondary")):
@@ -170,9 +178,8 @@ with tab1:
              st.rerun()
         
         for i, nom in enumerate(nombres):
-            df_indiv = df_main[df_main['COLABORADOR'] == nom]
-            if st.session_state.nivel_seleccionado != 'Ambos':
-                df_indiv = df_indiv[df_indiv.get('NIVEL') == st.session_state.nivel_seleccionado]
+            # Usamos el DF filtrado por nivel para el cálculo individual
+            df_indiv = df_con_nivel[df_con_nivel['COLABORADOR'] == nom]
             
             t_ind = len(df_indiv)
             ok_ind = (df_indiv['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_indiv.columns else 0
@@ -184,11 +191,17 @@ with tab1:
                 st.rerun()
         
         st.divider()
-        df_view = df_main[df_main['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_main
-        df_view_calc = df_view if st.session_state.nivel_seleccionado == 'Ambos' else df_view[df_view.get('NIVEL') == st.session_state.nivel_seleccionado]
         
-        total = len(df_view_calc)
-        ok = (df_view_calc['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view_calc.columns else 0
+        # --- DETALLE DEL SELECCIONADO ---
+        # Si el colaborador activo no existe en el nivel actual (porque se cambió el nivel), resetear a Todos
+        if st.session_state.colaborador_activo != 'Todos' and st.session_state.colaborador_activo not in nombres:
+            st.session_state.colaborador_activo = 'Todos'
+            st.rerun()
+
+        df_view = df_con_nivel[df_con_nivel['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_con_nivel
+        
+        total = len(df_view)
+        ok = (df_view['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view.columns else 0
         porc = (ok / total * 100) if total > 0 else 0
         
         st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}% ({st.session_state.colaborador_activo})</h4></div>", unsafe_allow_html=True)
@@ -200,14 +213,14 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
-            st.dataframe(df_view_calc[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
+            st.dataframe(df_view[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
 
-        # --- SECCIÓN IA OPTIMIZADA ---
+        # --- SECCIÓN IA ---
         if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
             with st.expander("🤖 Análisis Inteligente de Formación"):
                 if st.button("Generar Recomendación con IA"):
                     with st.spinner("Analizando cumplimiento..."):
-                        pendientes = df_view_calc[df_view_calc['ESTADO_NUM'] == 0]['CURSO'].tolist()
+                        pendientes = df_view[df_view['ESTADO_NUM'] == 0]['CURSO'].tolist()
                         status_text = "al 100%" if porc == 100 else f"al {porc:.1f}%"
                         
                         prompt = f"""
@@ -258,7 +271,6 @@ with tab3:
     elif 'FECHA_DT' not in df_planif_raw.columns:
         st.error("❌ Revisa la columna FECHA en tu Excel.")
     else:
-        # Limpieza y filtrado
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
         nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Filtrar por colaborador:", nombres_planif)
@@ -266,7 +278,6 @@ with tab3:
         if busqueda != "Todos":
             df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
 
-        # Construcción de eventos con validación
         calendar_events = []
         for _, row in df_cal.iterrows():
             try:
@@ -286,12 +297,9 @@ with tab3:
                 })
             except: continue
 
-        # --- KEY DINÁMICA: Soluciona el problema de la agenda en blanco ---
         cal_key = f"calendar_{st.session_state.sector_activo}_{busqueda}"
-        
         state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key=cal_key)
         
-        # Detalles del evento al hacer clic
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             st.markdown("---")
