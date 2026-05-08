@@ -72,6 +72,7 @@ def load_data_general():
             elif "FORMACION" in c or "CURSO" in c: col_map[c] = 'CURSO'
             elif "CAPACITA" in c or "ESTADO" in c: col_map[c] = 'ESTADO_NUM'
             elif "NIVEL" in c: col_map[c] = 'NIVEL'
+            elif "MARCA" in c: col_map[c] = 'MARCA' # --- NUEVO: Mapeo de Marca ---
         
         df = df.rename(columns=col_map)
         df = df.loc[:, ~df.columns.duplicated()]
@@ -81,7 +82,7 @@ def load_data_general():
         else:
             df['ESTADO_NUM'] = 0
 
-        for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL']:
+        for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA']:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
         return df
@@ -100,20 +101,38 @@ def load_planificacion():
     except Exception:
         return pd.DataFrame()
 
-df = load_data_general()
+df_raw = load_data_general()
 df_planif_raw = load_planificacion()
 
-if df.empty or 'SECTOR' not in df.columns:
+if df_raw.empty or 'SECTOR' not in df_raw.columns:
     st.error("⚠️ Error de formato en la hoja de cálculo.")
     st.stop()
 
 # --- ESTADO DE SESIÓN ---
+if 'marca_activa' not in st.session_state: st.session_state.marca_activa = "TODAS"
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
 if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
 
 # --- BARRA LATERAL ---
+st.sidebar.title("🏷️ Filtros Principales")
+
+# Filtro de Marca
+marcas = ["TODAS"] + sorted([m for m in df_raw['MARCA'].unique() if str(m) != "NAN"]) if 'MARCA' in df_raw.columns else ["TODAS"]
+sel_marca = st.sidebar.selectbox("Seleccionar Marca:", marcas, index=marcas.index(st.session_state.marca_activa) if st.session_state.marca_activa in marcas else 0)
+
+if sel_marca != st.session_state.marca_activa:
+    st.session_state.update({"marca_activa": sel_marca, "sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+    st.rerun()
+
+# Aplicar filtro de Marca al DF base
+df = df_raw.copy()
+if st.session_state.marca_activa != "TODAS":
+    df = df[df['MARCA'] == st.session_state.marca_activa]
+
+st.sidebar.divider()
+
 st.sidebar.title("🏢 Sectores")
 if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
     st.session_state.update({"sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
@@ -149,7 +168,7 @@ if st.sidebar.button("🔒 Salir"):
 # --- LÓGICA DE FILTRADO ---
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
-st.title(f"🎓 Gestión de Formación: {st.session_state.sector_activo} > {sel_rol}")
+st.title(f"🎓 Gestión de Formación: {st.session_state.marca_activa} > {st.session_state.sector_activo}")
 tab1, tab2, tab3 = st.tabs(["📊 Tablero de Control", "📅 Planificador & Gantt", "🗓️ Agenda Interactiva"])
 
 with tab1:
@@ -163,13 +182,11 @@ with tab1:
 
         st.divider()
 
-        # --- FILTRO POR NIVEL ANTES DE GENERAR BOTONES ---
         if st.session_state.nivel_seleccionado != 'Ambos':
             df_con_nivel = df_main[df_main['NIVEL'] == st.session_state.nivel_seleccionado]
         else:
             df_con_nivel = df_main
 
-        # Obtenemos solo los colaboradores que tienen registros en el nivel seleccionado
         nombres = sorted(df_con_nivel['COLABORADOR'].unique())
         cols = st.columns(4)
         
@@ -178,9 +195,7 @@ with tab1:
              st.rerun()
         
         for i, nom in enumerate(nombres):
-            # Usamos el DF filtrado por nivel para el cálculo individual
             df_indiv = df_con_nivel[df_con_nivel['COLABORADOR'] == nom]
-            
             t_ind = len(df_indiv)
             ok_ind = (df_indiv['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_indiv.columns else 0
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
@@ -192,8 +207,6 @@ with tab1:
         
         st.divider()
         
-        # --- DETALLE DEL SELECCIONADO ---
-        # Si el colaborador activo no existe en el nivel actual (porque se cambió el nivel), resetear a Todos
         if st.session_state.colaborador_activo != 'Todos' and st.session_state.colaborador_activo not in nombres:
             st.session_state.colaborador_activo = 'Todos'
             st.rerun()
@@ -213,7 +226,9 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** cursos.")
-            st.dataframe(df_view[['COLABORADOR','CURSO','NIVEL','ESTADO_NUM']], use_container_width=True, hide_index=True)
+            # --- NUEVO: Tabla con MARCA incluida ---
+            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'NIVEL', 'ESTADO_NUM']
+            st.dataframe(df_view[[c for c in cols_tabla if c in df_view.columns]], use_container_width=True, hide_index=True)
 
         # --- SECCIÓN IA ---
         if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
@@ -225,7 +240,7 @@ with tab1:
                         
                         prompt = f"""
                         Eres un experto en Capacitación Automotriz de Autolux/Cenoa.
-                        Analiza al colaborador {st.session_state.colaborador_activo} ({st.session_state.sector_activo}).
+                        Analiza al colaborador {st.session_state.colaborador_activo} de la marca {st.session_state.marca_activa}.
                         Estado: {status_text}.
                         Pendientes: {', '.join(pendientes) if pendientes else 'Ninguno'}.
                         Tarea: Resumen de 3 líneas motivador y técnico sobre prioridades 2026.
@@ -236,17 +251,17 @@ with tab1:
                         except Exception as e:
                             st.error("Error al conectar con Gemini.")
 
+# (Resto de tabs sin cambios significativos en la lógica, heredan el filtrado de marca de df_main)
 with tab2:
+    # Lógica de Planificador (Hereda df_main ya filtrado por marca)
     fecha_fin = datetime(2026, 3, 20)
     fecha_hoy = datetime.now()
     dias_restantes = (fecha_fin - fecha_hoy).days
-    
     if dias_restantes > 0:
         dias_h = sum(1 for i in range(dias_restantes + 1) if (fecha_hoy + timedelta(i)).weekday() < 5)
         semanas_r = max(1, math.ceil(dias_h / 5))
-        df_pend = df_main[df_main['ESTADO_NUM'] == 0] if 'ESTADO_NUM' in df_main.columns else df_main
+        df_pend = df_main[df_main['ESTADO_NUM'] == 0]
         df_plan = df_pend[df_pend['COLABORADOR'] == st.session_state.colaborador_activo] if st.session_state.colaborador_activo != 'Todos' else df_pend
-        
         if not df_plan.empty:
             ritmo = math.ceil(len(df_plan) / semanas_r)
             st.metric("Meta Semanal", f"{ritmo} cursos/semana")
@@ -265,7 +280,6 @@ with tab2:
 
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
-    
     if df_planif_raw.empty:
         st.warning("⚠️ No hay datos en Planificación.")
     elif 'FECHA_DT' not in df_planif_raw.columns:
@@ -274,10 +288,8 @@ with tab3:
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
         nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Filtrar por colaborador:", nombres_planif)
-
         if busqueda != "Todos":
             df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
-
         calendar_events = []
         for _, row in df_cal.iterrows():
             try:
@@ -296,10 +308,8 @@ with tab3:
                     }
                 })
             except: continue
-
-        cal_key = f"calendar_{st.session_state.sector_activo}_{busqueda}"
+        cal_key = f"calendar_{st.session_state.marca_activa}_{busqueda}"
         state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key=cal_key)
-        
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             st.markdown("---")
