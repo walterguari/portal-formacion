@@ -84,7 +84,6 @@ def load_data_general():
         else:
             df['ESTADO_NUM'] = 0
 
-        # Limpiar strings y normalizar
         cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO', 'CAPACITACIONES']
         for c in cols_limpieza:
             if c in df.columns:
@@ -228,11 +227,8 @@ with tab1:
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** registros.")
             
-            # --- TABLA ACTUALIZADA SEGÚN PEDIDO ---
-            # Se eliminó "CAPACITACIÓN" y se agregaron las columnas nuevas solicitadas
-            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'CAPACITACIONES', 'NIVEL', 'ESTADO_NUM']
-            
-            # Solo mostramos las columnas que realmente existan para evitar errores de clave
+            # --- TABLA ACTUALIZADA (Sin columna de estado) ---
+            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'CAPACITACIONES', 'NIVEL']
             cols_visibles = [c for c in cols_tabla if c in df_view.columns]
             st.dataframe(df_view[cols_visibles], use_container_width=True, hide_index=True)
 
