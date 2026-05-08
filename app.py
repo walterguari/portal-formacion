@@ -66,13 +66,15 @@ def load_data_general():
         df.columns = df.columns.str.strip().str.upper()
         col_map = {}
         for c in df.columns:
-            if "SECTOR" in c: col_map[c] = 'SECTOR'
+            if "MARCA" in c: col_map[c] = 'MARCA'
+            elif "SECTOR" in c: col_map[c] = 'SECTOR'
             elif "ROL" in c or "CARGO" in c: col_map[c] = 'CARGO'
             elif "NOMBRE" in c or "COLABORADOR" in c: col_map[c] = 'COLABORADOR'
+            elif "TIPO" in c and "CURSO" in c: col_map[c] = 'TIPO_CURSO'
+            elif "CAPACITACIONES" in c: col_map[c] = 'CAPACITACIONES'
             elif "FORMACION" in c or "CURSO" in c: col_map[c] = 'CURSO'
             elif "CAPACITA" in c or "ESTADO" in c: col_map[c] = 'ESTADO_NUM'
             elif "NIVEL" in c: col_map[c] = 'NIVEL'
-            elif "MARCA" in c: col_map[c] = 'MARCA' # --- NUEVO: Mapeo de Marca ---
         
         df = df.rename(columns=col_map)
         df = df.loc[:, ~df.columns.duplicated()]
@@ -82,7 +84,9 @@ def load_data_general():
         else:
             df['ESTADO_NUM'] = 0
 
-        for c in ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA']:
+        # Limpiar strings y normalizar
+        cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO', 'CAPACITACIONES']
+        for c in cols_limpieza:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
         return df
@@ -118,7 +122,6 @@ if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccio
 # --- BARRA LATERAL ---
 st.sidebar.title("🏷️ Filtros Principales")
 
-# Filtro de Marca
 marcas = ["TODAS"] + sorted([m for m in df_raw['MARCA'].unique() if str(m) != "NAN"]) if 'MARCA' in df_raw.columns else ["TODAS"]
 sel_marca = st.sidebar.selectbox("Seleccionar Marca:", marcas, index=marcas.index(st.session_state.marca_activa) if st.session_state.marca_activa in marcas else 0)
 
@@ -126,13 +129,11 @@ if sel_marca != st.session_state.marca_activa:
     st.session_state.update({"marca_activa": sel_marca, "sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
     st.rerun()
 
-# Aplicar filtro de Marca al DF base
 df = df_raw.copy()
 if st.session_state.marca_activa != "TODAS":
     df = df[df['MARCA'] == st.session_state.marca_activa]
 
 st.sidebar.divider()
-
 st.sidebar.title("🏢 Sectores")
 if st.sidebar.button("VER TODO", type=("primary" if st.session_state.sector_activo == "Todos" else "secondary")):
     st.session_state.update({"sector_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
@@ -225,10 +226,15 @@ with tab1:
             fig.update_layout(height=250, margin=dict(t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.info(f"Completado: **{ok}** de **{total}** cursos.")
-            # --- NUEVO: Tabla con MARCA incluida ---
-            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'NIVEL', 'ESTADO_NUM']
-            st.dataframe(df_view[[c for c in cols_tabla if c in df_view.columns]], use_container_width=True, hide_index=True)
+            st.info(f"Completado: **{ok}** de **{total}** registros.")
+            
+            # --- TABLA ACTUALIZADA SEGÚN PEDIDO ---
+            # Se eliminó "CAPACITACIÓN" y se agregaron las columnas nuevas solicitadas
+            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'CAPACITACIONES', 'NIVEL', 'ESTADO_NUM']
+            
+            # Solo mostramos las columnas que realmente existan para evitar errores de clave
+            cols_visibles = [c for c in cols_tabla if c in df_view.columns]
+            st.dataframe(df_view[cols_visibles], use_container_width=True, hide_index=True)
 
         # --- SECCIÓN IA ---
         if st.session_state.colaborador_activo != 'Todos' and "GEMINI_API_KEY" in st.secrets:
@@ -251,9 +257,7 @@ with tab1:
                         except Exception as e:
                             st.error("Error al conectar con Gemini.")
 
-# (Resto de tabs sin cambios significativos en la lógica, heredan el filtrado de marca de df_main)
 with tab2:
-    # Lógica de Planificador (Hereda df_main ya filtrado por marca)
     fecha_fin = datetime(2026, 3, 20)
     fecha_hoy = datetime.now()
     dias_restantes = (fecha_fin - fecha_hoy).days
