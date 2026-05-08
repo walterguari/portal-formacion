@@ -98,10 +98,24 @@ def load_planificacion():
     try:
         df_p = pd.read_csv(URL_PLANIF)
         df_p.columns = df_p.columns.str.strip().str.upper()
-        if 'FECHA' in df_p.columns:
-            df_p['FECHA_DT'] = pd.to_datetime(df_p['FECHA'], dayfirst=True, errors='coerce')
+        
+        # Lógica flexible para encontrar la FECHA
+        for c in df_p.columns:
+            if "FECHA" in c:
+                df_p['FECHA_DT'] = pd.to_datetime(df_p[c], dayfirst=True, errors='coerce')
+                break
+        
+        # Mapeo flexible para el nombre del curso en agenda
+        col_map_p = {}
+        for c in df_p.columns:
+            if "NOMBRE" in c and "CURSO" in c: col_map_p[c] = 'NOMBRE_DEL_CURSO'
+            elif "CURSO" in c and "NOMBRE" not in c: col_map_p[c] = 'NOMBRE_DEL_CURSO'
+            elif "COLABORADOR" in c: col_map_p[c] = 'COLABORADOR'
+        
+        df_p = df_p.rename(columns=col_map_p)
         return df_p.fillna("")
-    except Exception:
+    except Exception as e:
+        st.error(f"Error en Planificación (Agenda): {e}")
         return pd.DataFrame()
 
 df_raw = load_data_general()
@@ -280,36 +294,53 @@ with tab2:
 
 with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
+    
     if df_planif_raw.empty:
         st.warning("⚠️ No hay datos en Planificación.")
     elif 'FECHA_DT' not in df_planif_raw.columns:
-        st.error("❌ Revisa la columna FECHA en tu Excel.")
+        st.error("❌ No se encontró una columna de FECHA válida en el Sheets.")
     else:
+        # Filtrar solo filas con fecha válida
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
+        
+        # Filtro de colaborador en agenda
         nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
-        busqueda = st.selectbox("🔍 Filtrar por colaborador:", nombres_planif)
+        busqueda = st.selectbox("🔍 Filtrar agenda por colaborador:", nombres_planif)
+        
         if busqueda != "Todos":
             df_cal = df_cal[df_cal['COLABORADOR'] == busqueda]
+            
         calendar_events = []
         for _, row in df_cal.iterrows():
             try:
+                # Determinar color según si es presencial o virtual
                 tipo = str(row.get('CURSO', '')).upper()
                 color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
+                
+                # Obtener nombre del curso mapeado o por defecto
+                nombre_curso = row.get('NOMBRE_DEL_CURSO', row.get('CURSO', 'Curso'))
+                colab = row.get('COLABORADOR', 'S/D')
+                
                 calendar_events.append({
-                    "title": f"{str(row.get('COLABORADOR', ''))[:10]} | {str(row.get('NOMBRE DEL CURSO', ''))[:15]}",
+                    "title": f"{str(colab)[:10]} | {str(nombre_curso)[:20]}",
                     "start": row['FECHA_DT'].strftime('%Y-%m-%d'),
                     "backgroundColor": color,
                     "allDay": True,
                     "extendedProps": {
                         "horario": str(row.get('HORARIO', 'No definido')),
                         "link": str(row.get('LINK', '')),
-                        "curso": str(row.get('NOMBRE DEL CURSO', '')),
+                        "curso": str(nombre_curso),
                         "obs": str(row.get('OBSERVACIONES', 'Sin observaciones'))
                     }
                 })
-            except: continue
-        cal_key = f"calendar_{st.session_state.marca_activa}_{busqueda}"
+            except:
+                continue
+
+        # KEY Dinámica para forzar refresco del calendario
+        cal_key = f"calendar_{st.session_state.marca_activa}_{busqueda}_{len(calendar_events)}"
+        
         state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key=cal_key)
+        
         if state.get("eventClick"):
             ev = state["eventClick"]["event"]
             st.markdown("---")
