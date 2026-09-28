@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.graph_objects as go
-import plotly.figure_factory as ff
+import plotly.express as px # <-- Librería moderna para el Gantt (Reemplaza a figure_factory)
 from datetime import datetime, timedelta
 import math
 from streamlit_calendar import calendar
@@ -123,27 +123,27 @@ def load_planificacion():
         df_p = pd.read_csv(URL_PLANIF)
         df_p.columns = df_p.columns.str.strip().str.upper()
         
-        # Mapeo avanzado para el nuevo formato de Planificación
+        # Mapeo super robusto para los encabezados de la Planificación
         col_curso = next((c for c in df_p.columns if "TÍTULO" in c or "TITULO" in c), None)
-        col_fecha_ini = next((c for c in df_p.columns if "COMIENZO" in c), next((c for c in df_p.columns if "FECHA" in c), None))
+        col_fecha_ini = next((c for c in df_p.columns if "COMIENZO" in c), None)
         col_fecha_fin = next((c for c in df_p.columns if "FINALIZACIÓN" in c or "FINALIZACION" in c), None)
         
-        # Unir nombre y apellido si existen
-        col_ape = next((c for c in df_p.columns if "APELLIDOS" in c or "APELLIDO" in c), None)
-        col_nom = next((c for c in df_p.columns if "NOMBRE" in c and "USUARIO" in c), next((c for c in df_p.columns if "NOMBRE" in c), None))
+        col_ape = next((c for c in df_p.columns if "APELLIDOS" in c), None)
+        col_nom = next((c for c in df_p.columns if "NOMBRE" in c and "USUARIO" in c), None)
         
+        # Unir apellidos y nombres
         if col_ape and col_nom:
-            df_p['COLABORADOR'] = df_p[col_ape].astype(str) + " " + df_p[col_nom].astype(str)
+            df_p['COLABORADOR'] = df_p[col_ape].astype(str).str.strip() + " " + df_p[col_nom].astype(str).str.strip()
         elif col_nom:
-            df_p['COLABORADOR'] = df_p[col_nom]
+            df_p['COLABORADOR'] = df_p[col_nom].astype(str).str.strip()
         elif col_ape:
-            df_p['COLABORADOR'] = df_p[col_ape]
+            df_p['COLABORADOR'] = df_p[col_ape].astype(str).str.strip()
         else:
             df_p['COLABORADOR'] = "S/D"
 
-        df_p['NOMBRE_DEL_CURSO'] = df_p[col_curso] if col_curso else "Curso"
+        df_p['NOMBRE_DEL_CURSO'] = df_p[col_curso] if col_curso else "Curso no especificado"
         
-        # Convertir Fechas y Horas
+        # Parseo de fechas (formato esperado día/mes/año hora:min)
         if col_fecha_ini:
             df_p['FECHA_DT'] = pd.to_datetime(df_p[col_fecha_ini], dayfirst=True, errors='coerce')
         if col_fecha_fin:
@@ -158,7 +158,7 @@ df_raw = load_data_general()
 df_planif_raw = load_planificacion()
 
 if df_raw.empty or 'SECTOR' not in df_raw.columns:
-    st.error("⚠️ Error de formato en la hoja de cálculo.")
+    st.error("⚠️ Error de formato en la hoja de cálculo general.")
     st.stop()
 
 # --- ESTADO DE SESIÓN ---
@@ -356,7 +356,6 @@ with tab1:
                             st.error("Error al conectar con Gemini.")
 
 with tab2:
-    # --- FECHA LÍMITE ACTUALIZADA A 20/12/2026 ---
     fecha_fin = datetime(2026, 12, 20)
     fecha_hoy = datetime.now()
     dias_restantes = (fecha_fin - fecha_hoy).days
@@ -377,9 +376,18 @@ with tab2:
             for i, row in enumerate(df_plan.itertuples()):
                 n_s = (i // ritmo)
                 ini = fecha_hoy + timedelta(weeks=n_s)
-                df_gantt.append(dict(Task=f"{row.COLABORADOR[:10]}", Start=ini.strftime('%Y-%m-%d'), Finish=(ini + timedelta(days=4)).strftime('%Y-%m-%d'), Resource=getattr(row, 'NIVEL', 'N/A')))
+                fin = ini + timedelta(days=4)
+                
+                colab_str = str(getattr(row, 'COLABORADOR', 'S/D'))[:15]
+                nivel_str = str(getattr(row, 'NIVEL', 'N/A'))
+                
+                df_gantt.append(dict(Task=colab_str, Start=ini.strftime('%Y-%m-%d'), Finish=fin.strftime('%Y-%m-%d'), Resource=nivel_str))
+                
             if df_gantt:
-                fig_g = ff.create_gantt(df_gantt, index_col='Resource', show_colorbar=True, group_tasks=True)
+                df_g = pd.DataFrame(df_gantt)
+                # ¡AQUÍ ESTÁ LA SOLUCIÓN DEL ERROR! Usamos plotly.express (px) 
+                fig_g = px.timeline(df_g, x_start="Start", x_end="Finish", y="Task", color="Resource")
+                fig_g.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig_g, use_container_width=True)
         else:
             st.success("🎉 ¡Objetivo cumplido! No hay cursos pendientes.")
@@ -390,14 +398,13 @@ with tab3:
     st.subheader("🗓️ Agenda de Cursos Interactiva")
     
     if df_planif_raw.empty:
-        st.warning("⚠️ No hay datos en Planificación.")
+        st.warning("⚠️ No hay datos en Planificación. Verifica que el archivo de Sheets tenga las columnas correctas.")
     elif 'FECHA_DT' not in df_planif_raw.columns:
-        st.error("❌ No se encontró una columna de FECHA válida en el Sheets.")
+        st.error("❌ No se encontraron fechas válidas en la Planificación.")
     else:
-        # Filtrar quitando NaTs (fechas no válidas)
         df_cal = df_planif_raw[df_planif_raw['FECHA_DT'].notna()].copy()
         
-        nombres_planif = ["Todos"] + sorted([str(x) for x in df_cal['COLABORADOR'].unique() if str(x) != "nan"])
+        nombres_planif = ["Todos"] + sorted([str(x) for x in df_cal['COLABORADOR'].unique() if str(x) != "nan" and str(x) != "S/D"])
         busqueda = st.selectbox("🔍 Filtrar agenda por colaborador:", nombres_planif)
         
         if busqueda != "Todos":
@@ -409,28 +416,24 @@ with tab3:
                 nombre_curso = str(row.get('NOMBRE_DEL_CURSO', 'Curso'))
                 colab = str(row.get('COLABORADOR', 'S/D'))
                 
-                # Para saber si es presencial miramos el titulo si no hay columna "CURSO" específica en esta hoja
+                # Para el color de presencial vs virtual
                 tipo_info = nombre_curso.upper()
                 color = "#28a745" if "PRESENCIAL" in tipo_info else "#3788d8"
                 
-                # Construir el evento con la hora específica en formato ISO
                 fecha_inicio_iso = row['FECHA_DT'].isoformat()
-                
-                # Texto para la hora a mostrar en la interfaz
                 hora_texto = row['FECHA_DT'].strftime('%H:%M')
                 
                 event = {
                     "title": f"{colab[:15]} | {nombre_curso[:25]}",
                     "start": fecha_inicio_iso,
                     "backgroundColor": color,
-                    "allDay": False, # Habilita la visualización de la hora en el calendario
+                    "allDay": False,
                     "extendedProps": {
                         "curso": nombre_curso,
                         "obs": "Registrado en Planificación"
                     }
                 }
                 
-                # Si existe fecha/hora de fin, la agregamos
                 if 'FECHA_FIN_DT' in row and pd.notna(row['FECHA_FIN_DT']):
                     event["end"] = row['FECHA_FIN_DT'].isoformat()
                     hora_texto += f" - {row['FECHA_FIN_DT'].strftime('%H:%M')}"
