@@ -63,31 +63,39 @@ URL_PLANIF = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=c
 def load_data_general():
     try:
         df = pd.read_csv(URL_GENERAL)
+        # Limpieza de encabezados
         df.columns = df.columns.str.strip().str.upper()
+        
+        # Mapeo EXACTO según los nuevos encabezados definidos
         col_map = {}
         for c in df.columns:
-            if "MARCA" in c: col_map[c] = 'MARCA'
-            elif "SECTOR" in c: col_map[c] = 'SECTOR'
-            elif "ROL" in c or "CARGO" in c: col_map[c] = 'CARGO'
-            elif "NOMBRE" in c or "COLABORADOR" in c: col_map[c] = 'COLABORADOR'
-            elif "TIPO" in c and "CURSO" in c: col_map[c] = 'TIPO_CURSO'
-            elif "CAPACITACIONES" in c: col_map[c] = 'CAPACITACIONES'
-            elif "FORMACION" in c or "CURSO" in c: col_map[c] = 'CURSO'
-            elif "CAPACITA" in c or "ESTADO" in c: col_map[c] = 'ESTADO_NUM'
-            elif "NIVEL" in c: col_map[c] = 'NIVEL'
+            if c == "MARCA": col_map[c] = 'MARCA'
+            elif c == "SECTOR": col_map[c] = 'SECTOR'
+            elif c == "CARGO": col_map[c] = 'CARGO'
+            elif c == "NOMBRE DEL COLABORADOR": col_map[c] = 'COLABORADOR'
+            elif c == "FORMACION": col_map[c] = 'CURSO'
+            elif c == "TIPO DE CURSO": col_map[c] = 'TIPO_CURSO'
+            elif c == "NIVELES": col_map[c] = 'NIVEL'
+            elif c == "CAPACITACIONES": col_map[c] = 'ESTADO_NUM' # Columna con los valores 1 o 0
+            elif c == "ESTADO DE CAPACITACIONES": col_map[c] = 'ESTADO_TEXTO' # Columna con el texto "Realizado"
         
         df = df.rename(columns=col_map)
+        
+        # Evitar columnas duplicadas
         df = df.loc[:, ~df.columns.duplicated()]
         
+        # Conversión del estado a número de forma segura
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
         else:
             df['ESTADO_NUM'] = 0
 
-        cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO', 'CAPACITACIONES']
+        # Normalización de textos
+        cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO']
         for c in cols_limpieza:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
+                
         return df
     except Exception as e:
         st.error(f"Error en Datos Generales: {e}")
@@ -241,8 +249,8 @@ with tab1:
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** registros.")
             
-            # --- TABLA ACTUALIZADA (Sin columna de estado) ---
-            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'CAPACITACIONES', 'NIVEL']
+            # --- TABLA ACTUALIZADA ---
+            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'ESTADO_TEXTO', 'NIVEL']
             cols_visibles = [c for c in cols_tabla if c in df_view.columns]
             st.dataframe(df_view[cols_visibles], use_container_width=True, hide_index=True)
 
