@@ -63,35 +63,33 @@ URL_PLANIF = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=c
 def load_data_general():
     try:
         df = pd.read_csv(URL_GENERAL)
-        # Limpieza de encabezados
+        # Limpieza inicial de encabezados
         df.columns = df.columns.str.strip().str.upper()
         
-        # Mapeo EXACTO según los nuevos encabezados definidos
+        # Mapeo EXACTO de columnas
         col_map = {}
         for c in df.columns:
-            if c == "MARCA": col_map[c] = 'MARCA'
+            if c in ["TIPO DE CAPACITACIÓN", "TIPO DE CAPACITACION"]: col_map[c] = 'TIPO_CAPACITACION' # Nueva columna
+            elif c == "MARCA": col_map[c] = 'MARCA'
             elif c == "SECTOR": col_map[c] = 'SECTOR'
             elif c == "CARGO": col_map[c] = 'CARGO'
             elif c == "NOMBRE DEL COLABORADOR": col_map[c] = 'COLABORADOR'
             elif c == "FORMACION": col_map[c] = 'CURSO'
             elif c == "TIPO DE CURSO": col_map[c] = 'TIPO_CURSO'
             elif c == "NIVELES": col_map[c] = 'NIVEL'
-            elif c == "CAPACITACIONES": col_map[c] = 'ESTADO_NUM' # Columna con los valores 1 o 0
-            elif c == "ESTADO DE CAPACITACIONES": col_map[c] = 'ESTADO_TEXTO' # Columna con el texto "Realizado"
+            elif c == "CAPACITACIONES": col_map[c] = 'ESTADO_NUM'
+            elif c == "ESTADO DE CAPACITACIONES": col_map[c] = 'ESTADO_TEXTO'
         
         df = df.rename(columns=col_map)
-        
-        # Evitar columnas duplicadas
         df = df.loc[:, ~df.columns.duplicated()]
         
-        # Conversión del estado a número de forma segura
         if 'ESTADO_NUM' in df.columns:
             df['ESTADO_NUM'] = pd.to_numeric(df['ESTADO_NUM'], errors='coerce').fillna(0).astype(int)
         else:
             df['ESTADO_NUM'] = 0
 
-        # Normalización de textos
-        cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO']
+        # Normalización de textos, agregamos TIPO_CAPACITACION
+        cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO', 'TIPO_CAPACITACION']
         for c in cols_limpieza:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip().str.upper()
@@ -107,13 +105,11 @@ def load_planificacion():
         df_p = pd.read_csv(URL_PLANIF)
         df_p.columns = df_p.columns.str.strip().str.upper()
         
-        # Lógica flexible para encontrar la FECHA
         for c in df_p.columns:
             if "FECHA" in c:
                 df_p['FECHA_DT'] = pd.to_datetime(df_p[c], dayfirst=True, errors='coerce')
                 break
         
-        # Mapeo flexible para el nombre del curso en agenda
         col_map_p = {}
         for c in df_p.columns:
             if "NOMBRE" in c and "CURSO" in c: col_map_p[c] = 'NOMBRE_DEL_CURSO'
@@ -173,6 +169,25 @@ for sec in sorted(df['SECTOR'].unique()):
         st.session_state.update({"sector_activo": sec, "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
         st.rerun()
 
+    # --- NUEVO: Desglose Obligatorio vs No Obligatorio ---
+    if 'TIPO_CAPACITACION' in df_s.columns:
+        df_obl = df_s[df_s['TIPO_CAPACITACION'] == 'OBLIGATORIO']
+        df_opt = df_s[df_s['TIPO_CAPACITACION'] != 'OBLIGATORIO'] # Todo lo que no sea "OBLIGATORIO"
+        
+        tot_obl = len(df_obl)
+        av_obl = ((df_obl['ESTADO_NUM'] == 1).sum() / tot_obl * 100) if tot_obl > 0 else 0
+        
+        tot_opt = len(df_opt)
+        av_opt = ((df_opt['ESTADO_NUM'] == 1).sum() / tot_opt * 100) if tot_opt > 0 else 0
+        
+        # Renderizado de las flechas y textos pequeños debajo del botón
+        st.sidebar.markdown(f"""
+        <div style='margin-top: -5px; margin-bottom: 10px; padding-left: 55px; font-size: 0.85em; color: #555; line-height: 1.3;'>
+            ↳ Obligatorio: <b>{av_obl:.0f}%</b><br>
+            ↳ No Obligatorio: <b>{av_opt:.0f}%</b>
+        </div>
+        """, unsafe_allow_html=True)
+
 st.sidebar.title("👮 Puestos")
 df_roles = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
 roles = ["Todos"] + sorted(df_roles['CARGO'].unique().tolist()) if 'CARGO' in df_roles.columns else ["Todos"]
@@ -187,7 +202,7 @@ if st.sidebar.button("🔒 Salir"):
     st.session_state.acceso_concedido = False
     st.rerun()
 
-# --- LÓGICA DE FILTRADO ---
+# --- LÓGICA DE FILTRADO (Resto de la App igual) ---
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
 st.title(f"🎓 Gestión de Formación: {st.session_state.marca_activa} > {st.session_state.sector_activo}")
@@ -249,8 +264,7 @@ with tab1:
         with c2:
             st.info(f"Completado: **{ok}** de **{total}** registros.")
             
-            # --- TABLA ACTUALIZADA ---
-            cols_tabla = ['MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'ESTADO_TEXTO', 'NIVEL']
+            cols_tabla = ['TIPO_CAPACITACION', 'MARCA', 'COLABORADOR', 'CURSO', 'TIPO_CURSO', 'ESTADO_TEXTO', 'NIVEL']
             cols_visibles = [c for c in cols_tabla if c in df_view.columns]
             st.dataframe(df_view[cols_visibles], use_container_width=True, hide_index=True)
 
@@ -308,10 +322,7 @@ with tab3:
     elif 'FECHA_DT' not in df_planif_raw.columns:
         st.error("❌ No se encontró una columna de FECHA válida en el Sheets.")
     else:
-        # Filtrar solo filas con fecha válida
         df_cal = df_planif_raw.dropna(subset=['FECHA_DT']).copy()
-        
-        # Filtro de colaborador en agenda
         nombres_planif = ["Todos"] + sorted(df_cal['COLABORADOR'].unique().tolist())
         busqueda = st.selectbox("🔍 Filtrar agenda por colaborador:", nombres_planif)
         
@@ -321,11 +332,8 @@ with tab3:
         calendar_events = []
         for _, row in df_cal.iterrows():
             try:
-                # Determinar color según si es presencial o virtual
                 tipo = str(row.get('CURSO', '')).upper()
                 color = "#28a745" if "PRESENCIAL" in tipo else "#3788d8"
-                
-                # Obtener nombre del curso mapeado o por defecto
                 nombre_curso = row.get('NOMBRE_DEL_CURSO', row.get('CURSO', 'Curso'))
                 colab = row.get('COLABORADOR', 'S/D')
                 
@@ -344,9 +352,7 @@ with tab3:
             except:
                 continue
 
-        # KEY Dinámica para forzar refresco del calendario
         cal_key = f"calendar_{st.session_state.marca_activa}_{busqueda}_{len(calendar_events)}"
-        
         state = calendar(events=calendar_events, options={"locale": "es", "height": 600}, key=cal_key)
         
         if state.get("eventClick"):
