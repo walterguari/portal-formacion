@@ -19,19 +19,32 @@ else:
 st.set_page_config(page_title="Portal Formación 2026", layout="wide", page_icon="🎓")
 
 # --- ESTILOS ---
-# Se agregó white-space: pre-wrap y height: auto para permitir botones de múltiples líneas (Nombre + Código)
+# Mejoras en los estilos: flexbox para forzar que el texto baje, y botones más chicos en el sidebar
 st.markdown("""
 <style>
+    /* Estilo general para los botones (permite múltiples líneas centradas) */
     div.stButton > button {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         width: 100%; 
         border-radius: 8px; 
         font-weight: bold; 
         margin-bottom: 5px; 
-        min-height: 45px; 
+        min-height: 55px; 
         height: auto; 
         white-space: pre-wrap; 
-        line-height: 1.3;
+        line-height: 1.2;
     }
+    
+    /* Estilo específico para hacer más chicos los botones de la barra lateral */
+    [data-testid="stSidebar"] div.stButton > button {
+        min-height: 45px;
+        font-size: 0.75rem !important;
+        padding: 5px !important;
+    }
+
     [data-testid="stSidebar"] img {display: block; margin: 0 auto 20px auto;}
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0 0; padding: 10px 20px; }
@@ -81,7 +94,7 @@ def load_data_general():
             elif c == "MARCA": col_map[c] = 'MARCA'
             elif c == "SECTOR": col_map[c] = 'SECTOR'
             elif c == "CARGO": col_map[c] = 'CARGO'
-            elif c in ["CÓDIGO", "CODIGO"]: col_map[c] = 'CODIGO' # Mapeo de la nueva columna de Código
+            elif c in ["CÓDIGO", "CODIGO"]: col_map[c] = 'CODIGO'
             elif c == "NOMBRE DEL COLABORADOR": col_map[c] = 'COLABORADOR'
             elif c == "FORMACION": col_map[c] = 'CURSO'
             elif c == "TIPO DE CURSO": col_map[c] = 'TIPO_CURSO'
@@ -97,7 +110,6 @@ def load_data_general():
         else:
             df['ESTADO_NUM'] = 0
 
-        # Normalización de textos
         cols_limpieza = ['SECTOR', 'CARGO', 'COLABORADOR', 'NIVEL', 'MARCA', 'TIPO_CURSO', 'TIPO_CAPACITACION', 'CODIGO']
         for c in cols_limpieza:
             if c in df.columns:
@@ -141,7 +153,7 @@ if df_raw.empty or 'SECTOR' not in df_raw.columns:
 # --- ESTADO DE SESIÓN ---
 if 'marca_activa' not in st.session_state: st.session_state.marca_activa = "TODAS"
 if 'sector_activo' not in st.session_state: st.session_state.sector_activo = "Todos"
-if 'tipo_cap_activo' not in st.session_state: st.session_state.tipo_cap_activo = "Todos" # Nuevo estado para Obligatorio/No Obligatorio
+if 'tipo_cap_activo' not in st.session_state: st.session_state.tipo_cap_activo = "Todos"
 if 'ultimo_cargo_sel' not in st.session_state: st.session_state.ultimo_cargo_sel = "Todos"
 if 'colaborador_activo' not in st.session_state: st.session_state.colaborador_activo = 'Todos'
 if 'nivel_seleccionado' not in st.session_state: st.session_state.nivel_seleccionado = 'Ambos'
@@ -173,15 +185,8 @@ for sec in sorted(df['SECTOR'].unique()):
     avance = (realizados / total_sec * 100) if total_sec > 0 else 0
     
     color_sidebar = "#ef5350" if avance < 50 else "#ffa726" if avance < 90 else "#66bb6a"
-    c1, c2 = st.sidebar.columns([1, 4])
-    c1.markdown(f"<div style='margin-top:10px; width:15px; height:15px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
     
-    # Botón Principal del Sector
-    if c2.button(f"{sec} ({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "Todos" else "secondary")):
-        st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
-        st.rerun()
-
-    # Botones Secundarios: Obligatorio vs No Obligatorio
+    # Distribución Horizontal: Punto, Botón Sector, Botón Oblig, Botón No Oblig
     if 'TIPO_CAPACITACION' in df_s.columns:
         df_obl = df_s[df_s['TIPO_CAPACITACION'] == 'OBLIGATORIO']
         df_opt = df_s[df_s['TIPO_CAPACITACION'] != 'OBLIGATORIO']
@@ -192,25 +197,37 @@ for sec in sorted(df['SECTOR'].unique()):
         tot_opt = len(df_opt)
         av_opt = ((df_opt['ESTADO_NUM'] == 1).sum() / tot_opt * 100) if tot_opt > 0 else 0
         
-        c_espacio, c_subbtn = st.sidebar.columns([1, 4])
-        with c_subbtn:
-            # Botón Obligatorio
-            tipo_obl_activo = (st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "OBLIGATORIO")
-            if st.button(f"↳ Obligatorio ({av_obl:.0f}%)", key=f"btn_obl_{sec}", type="primary" if tipo_obl_activo else "secondary"):
-                st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "OBLIGATORIO", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
-                st.rerun()
+        c_dot, c_sec, c_obl, c_opt = st.sidebar.columns([0.5, 3.5, 2.5, 2.5])
+        
+        c_dot.markdown(f"<div style='margin-top:15px; width:12px; height:12px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
+        
+        # Botón Principal del Sector
+        if c_sec.button(f"{sec}\n({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "Todos" else "secondary")):
+            st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+            st.rerun()
             
-            # Botón No Obligatorio
-            tipo_opt_activo = (st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "NO OBLIGATORIO")
-            if st.button(f"↳ No Obligat. ({av_opt:.0f}%)", key=f"btn_opt_{sec}", type="primary" if tipo_opt_activo else "secondary"):
-                st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "NO OBLIGATORIO", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
-                st.rerun()
+        # Botón Obligatorio
+        tipo_obl_activo = (st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "OBLIGATORIO")
+        if c_obl.button(f"Oblig.\n{av_obl:.0f}%", key=f"btn_obl_{sec}", type="primary" if tipo_obl_activo else "secondary"):
+            st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "OBLIGATORIO", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+            st.rerun()
+            
+        # Botón No Obligatorio
+        tipo_opt_activo = (st.session_state.sector_activo == sec and st.session_state.tipo_cap_activo == "NO OBLIGATORIO")
+        if c_opt.button(f"No Obl.\n{av_opt:.0f}%", key=f"btn_opt_{sec}", type="primary" if tipo_opt_activo else "secondary"):
+            st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "NO OBLIGATORIO", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+            st.rerun()
+    else:
+        # En caso de que no se encuentre la columna, renderiza solo el sector
+        c_dot, c_sec = st.sidebar.columns([1, 9])
+        c_dot.markdown(f"<div style='margin-top:15px; width:12px; height:12px; background-color:{color_sidebar}; border-radius:50%;'></div>", unsafe_allow_html=True)
+        if c_sec.button(f"{sec}\n({avance:.0f}%)", key=f"sidebar_{sec}", type=("primary" if st.session_state.sector_activo == sec else "secondary")):
+            st.session_state.update({"sector_activo": sec, "tipo_cap_activo": "Todos", "ultimo_cargo_sel": "Todos", "colaborador_activo": "Todos"})
+            st.rerun()
 
 # --- LÓGICA DE FILTRADO ---
-# 1. Filtro por Sector
 df_roles = df[df['SECTOR'] == st.session_state.sector_activo] if st.session_state.sector_activo != "Todos" else df
 
-# 2. Filtro por Tipo de Capacitación (Botones nuevos de la sidebar)
 if 'TIPO_CAPACITACION' in df_roles.columns:
     if st.session_state.tipo_cap_activo == "OBLIGATORIO":
         df_roles = df_roles[df_roles['TIPO_CAPACITACION'] == 'OBLIGATORIO']
@@ -230,10 +247,8 @@ if st.sidebar.button("🔒 Salir"):
     st.session_state.acceso_concedido = False
     st.rerun()
 
-# 3. Filtro final por Puesto
 df_main = df_roles[df_roles['CARGO'] == sel_rol] if sel_rol != "Todos" else df_roles
 
-# Etiqueta dinámica para el título
 txt_tipo = f" > {st.session_state.tipo_cap_activo}" if st.session_state.tipo_cap_activo != "Todos" else ""
 st.title(f"🎓 Gestión de Formación: {st.session_state.marca_activa} > {st.session_state.sector_activo}{txt_tipo}")
 
@@ -269,15 +284,14 @@ with tab1:
             p_ind = (ok_ind / t_ind * 100) if t_ind > 0 else 0
             emoji = "🟢" if p_ind == 100 else "🔴" if p_ind < 50 else "🟠"
             
-            # Buscar el código del colaborador
-            cod = "S/D"
+            # Formatear la etiqueta del botón con un salto de línea estricto para el código
+            cod = ""
             if 'CODIGO' in df_indiv.columns and not df_indiv['CODIGO'].empty:
                 val = df_indiv['CODIGO'].iloc[0]
                 if pd.notna(val) and val != 'NAN':
-                    cod = val
+                    cod = f"\nCód: {val}"
             
-            # Formato de dos líneas para el botón: \n hace que el código baje
-            label_boton = f"{emoji} {nom} ({p_ind:.0f}%)\n{cod}"
+            label_boton = f"{emoji} {nom} ({p_ind:.0f}%){cod}"
             
             if cols[(i+1)%4].button(label_boton, key=f"btn_{i}", type=("primary" if st.session_state.colaborador_activo == nom else "secondary")):
                 st.session_state.colaborador_activo = nom
@@ -295,7 +309,16 @@ with tab1:
         ok = (df_view['ESTADO_NUM'] == 1).sum() if 'ESTADO_NUM' in df_view.columns else 0
         porc = (ok / total * 100) if total > 0 else 0
         
-        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}% ({st.session_state.colaborador_activo})</h4></div>", unsafe_allow_html=True)
+        # Buscar el código del colaborador para mostrarlo arriba de forma copiable
+        codigo_copiable = ""
+        if st.session_state.colaborador_activo != 'Todos':
+            if 'CODIGO' in df_view.columns and not df_view['CODIGO'].empty:
+                val = df_view['CODIGO'].iloc[0]
+                if pd.notna(val) and val != 'NAN' and val != "":
+                    # Se incluye la etiqueta <code> para que sea fácil de doble-clickear y copiar
+                    codigo_copiable = f" &nbsp;|&nbsp; 📋 <b>Código:</b> <code style='font-size: 1.1em; color: #d32f2f; background-color: #ffebee; padding: 2px 6px; border-radius: 4px;'>{val}</code>"
+        
+        st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid {'green' if porc==100 else 'orange' if porc>=50 else 'red'};'><h4>Avance {st.session_state.nivel_seleccionado}: {porc:.1f}% ({st.session_state.colaborador_activo}){codigo_copiable}</h4></div>", unsafe_allow_html=True)
         
         c1, c2 = st.columns([1, 2])
         with c1:
